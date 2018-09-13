@@ -285,7 +285,7 @@ impl Default for DeblockState {
     fn default() -> Self {
         DeblockState {
             levels: [8,8,4,4],
-            sharpness: 0,
+            sharpness: 2,
             deltas_enabled: false, // requires delta_q_enabled
             delta_updates_enabled: false,
             ref_deltas: [1, 0, 0, 0, 0, -1, -1, -1],
