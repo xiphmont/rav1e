@@ -496,31 +496,41 @@ fn deblock_exhaustive_search(fi: &FrameInvariants, fs: &mut FrameState, bc: &mut
         let mut best_b = 0;
         let mut best_err:f64 = 0.;
         let p = fs.rec.planes[0].clone();
+
+
         for a in 0..MAX_LOOP_FILTER as u8 {
             fs.deblock.levels[0] = a;
-            for b in 0..MAX_LOOP_FILTER as u8 {
-                fs.deblock.levels[1] = b;
-                deblock_plane(fi, &fs.deblock, &mut fs.rec.planes[0], 0, bc, bd);
-                let err = compute_rd_cost(fi, fs, fi.width, fi.height, false, &BlockOffset{x:0, y:0}, 0, bd, true);
-                if err < best_err || (a==0 && b==0){
-                    best_a = a;
-                    best_b = b;
-                    best_err = err;
-                }
-                fs.rec.planes[0].data.copy_from_slice(&p.data);
-                //print!("{} {} {}\n",a,b,err);
+            fs.deblock.levels[1] = 0;
+            deblock_plane(fi, &fs.deblock, &mut fs.rec.planes[0], 0, bc, bd);
+            let err = compute_rd_cost(fi, fs, fi.width, fi.height, false, &BlockOffset{x:0, y:0}, 0, bd, true);
+            if err < best_err || a==0{
+                best_a = a;
+                best_err = err;
             }
+            fs.rec.planes[0].data.copy_from_slice(&p.data);
         }
-        //print!("\n");
+
+        for b in 0..MAX_LOOP_FILTER as u8 {
+            fs.deblock.levels[0] = 0;
+            fs.deblock.levels[1] = b;
+            deblock_plane(fi, &fs.deblock, &mut fs.rec.planes[0], 0, bc, bd);
+            let err = compute_rd_cost(fi, fs, fi.width, fi.height, false, &BlockOffset{x:0, y:0}, 0, bd, true);
+            if err < best_err || b==0 {
+                best_b = b;
+                best_err = err;
+            }
+            fs.rec.planes[0].data.copy_from_slice(&p.data);
+        }
         fs.deblock.levels[0] = best_a;
         fs.deblock.levels[1] = best_b;
     }
     for pli in 1..3 {
         let mut best = 0;
         let mut best_err:f64 = 0.;
+        let level_idx = pli+1;
         let p = fs.rec.planes[pli].clone();
         for a in 0..MAX_LOOP_FILTER as u8 {
-            fs.deblock.levels[pli+1] = a;
+            fs.deblock.levels[level_idx] = a;
             deblock_plane(fi, &fs.deblock, &mut fs.rec.planes[pli], pli, bc, bd);
             let err = compute_rd_cost(fi, fs, fi.width, fi.height, false, &BlockOffset{x:0, y:0}, 0, bd, false);
             if err < best_err || a==0 {
@@ -531,7 +541,7 @@ fn deblock_exhaustive_search(fi: &FrameInvariants, fs: &mut FrameState, bc: &mut
             //print!("{} {} {}\n",a,b,err);
         }
         //print!("\n");
-        fs.deblock.levels[pli+1] = best;
+        fs.deblock.levels[level_idx] = best;
     }
 }
 
