@@ -12,6 +12,7 @@
 use std::cmp;
 use context::*;
 use plane::*;
+use rdo::*;
 use quantize::*;
 use partition::*;
 use partition::PredictionMode::*;
@@ -489,36 +490,86 @@ pub fn deblock_filter_frame(fi: &FrameInvariants, fs: &mut FrameState,
     }
 }
 
-pub fn deblock_filter_optimize(fi: &FrameInvariants, fs: &mut FrameState,
-                               _bc: &mut BlockContext, bit_depth: usize) {
-    let q = ac_q(fi.base_q_idx, bit_depth) as i32;
-    let level = clamp (match bit_depth {
-        8 => {
-            if fi.frame_type == FrameType::KEY {
-                q * 17563 - 421574 + (1<<18>>1) >> 18
-            } else {
-                q * 6017 + 650707 + (1<<18>>1) >> 18
+fn deblock_exhaustive_search(fi: &FrameInvariants, fs: &mut FrameState, bc: &mut BlockContext, bd: usize) {
+    {
+        let mut best_a = 0;
+        let mut best_b = 0;
+        let mut best_err:f64 = 0.;
+        let p = fs.rec.planes[0].clone();
+        for a in 0..MAX_LOOP_FILTER as u8 {
+            fs.deblock.levels[0] = a;
+            for b in 0..MAX_LOOP_FILTER as u8 {
+                fs.deblock.levels[1] = b;
+                deblock_plane(fi, &fs.deblock, &mut fs.rec.planes[0], 0, bc, bd);
+                let err = compute_rd_cost(fi, fs, fi.width, fi.height, false, &BlockOffset{x:0, y:0}, 0, bd, true);
+                if err < best_err || (a==0 && b==0){
+                    best_a = a;
+                    best_b = b;
+                    best_err = err;
+                }
+                fs.rec.planes[0].data.copy_from_slice(&p.data);
+                //print!("{} {} {}\n",a,b,err);
             }
         }
-        10 => {
-            if fi.frame_type == FrameType::KEY {
-                (q * 20723 + 4060632 + (1<<20>>1) >> 20) - 4
-            } else {
-                q * 20723 + 4060632 + (1<<20>>1) >> 20
+        //print!("\n");
+        fs.deblock.levels[0] = best_a;
+        fs.deblock.levels[1] = best_b;
+    }
+    for pli in 1..3 {
+        let mut best = 0;
+        let mut best_err:f64 = 0.;
+        let p = fs.rec.planes[pli].clone();
+        for a in 0..MAX_LOOP_FILTER as u8 {
+            fs.deblock.levels[pli+1] = a;
+            deblock_plane(fi, &fs.deblock, &mut fs.rec.planes[pli], pli, bc, bd);
+            let err = compute_rd_cost(fi, fs, fi.width, fi.height, false, &BlockOffset{x:0, y:0}, 0, bd, false);
+            if err < best_err || a==0 {
+                best = a;
+                best_err = err;
             }
+            fs.rec.planes[pli].data.copy_from_slice(&p.data);
+            //print!("{} {} {}\n",a,b,err);
         }
-        12 => {
-            if fi.frame_type == FrameType::KEY {
-                (q * 20723 + 16242526 + (1<<22>>1) >> 22) - 4
-            } else {
-                q * 20723 + 16242526 + (1<<22>>1) >> 22
-            }
-        }
-        _ => {assert!(false); 0}
-    }, 0, MAX_LOOP_FILTER as i32) as u8;
+        //print!("\n");
+        fs.deblock.levels[pli+1] = best;
+    }
+}
 
-    fs.deblock.levels[0] = level;
-    fs.deblock.levels[1] = level;
-    fs.deblock.levels[2] = level;
-    fs.deblock.levels[3] = level;
+
+pub fn deblock_filter_optimize(fi: &FrameInvariants, fs: &mut FrameState,
+                               bc: &mut BlockContext, bit_depth: usize) {
+    if (false) {
+        let q = ac_q(fi.base_q_idx, bit_depth) as i32;
+        let level = clamp (match bit_depth {
+            8 => {
+                if fi.frame_type == FrameType::KEY {
+                    q * 17563 - 421574 + (1<<18>>1) >> 18
+                } else {
+                    q * 6017 + 650707 + (1<<18>>1) >> 18
+                }
+            }
+            10 => {
+                if fi.frame_type == FrameType::KEY {
+                    (q * 20723 + 4060632 + (1<<20>>1) >> 20) - 4
+                } else {
+                    q * 20723 + 4060632 + (1<<20>>1) >> 20
+                }
+            }
+            12 => {
+                if fi.frame_type == FrameType::KEY {
+                    (q * 20723 + 16242526 + (1<<22>>1) >> 22) - 4
+                } else {
+                    q * 20723 + 16242526 + (1<<22>>1) >> 22
+                }
+            }
+        _ => {assert!(false); 0}
+        }, 0, MAX_LOOP_FILTER as i32) as u8;
+
+        fs.deblock.levels[0] = level;
+        fs.deblock.levels[1] = level;
+        fs.deblock.levels[2] = level;
+        fs.deblock.levels[3] = level;
+    } else {
+        deblock_exhaustive_search(fi, fs, bc, bit_depth);
+    }
 }

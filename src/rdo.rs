@@ -147,7 +147,7 @@ pub fn get_lambda(fi: &FrameInvariants, bit_depth: usize) -> f64 {
 }
 
 // Compute the rate-distortion cost for an encode
-fn compute_rd_cost(
+pub fn compute_rd_cost(
   fi: &FrameInvariants, fs: &FrameState, w_y: usize, h_y: usize,
   is_chroma_block: bool, bo: &BlockOffset, bit_cost: u32, bit_depth: usize,
   luma_only: bool
