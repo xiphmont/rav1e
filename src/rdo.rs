@@ -741,7 +741,7 @@ pub fn rdo_partition_decision(
 }
 
 pub fn rdo_cdef_decision(sbo: &SuperBlockOffset, fi: &FrameInvariants,
-                         fs: &FrameState, cw: &mut ContextWriter, bit_depth: usize) -> u8 {
+                         fs: &mut FrameState, cw: &mut ContextWriter, bit_depth: usize) -> u8 {
     // FIXME: 128x128 SB support will break this, we need FilterBlockOffset etc.
     // Construct a single-superblock-sized frame to test-filter into
     let sbo_0 = SuperBlockOffset { x: 0, y: 0 };
@@ -804,7 +804,7 @@ pub fn rdo_cdef_decision(sbo: &SuperBlockOffset, fi: &FrameInvariants,
     // RDO comparisons
     let mut best_index: u8 = 0;
     let mut best_err: u64 = 0;
-    let cdef_dirs = cdef_analyze_superblock(&mut rec_input, bc, &sbo_0, &sbo, bit_depth);
+    let cdef_dirs = cdef_analyze_superblock(&mut fs.rec.planes[0], bc, &sbo, &sbo, bit_depth);
     for cdef_index in 0..(1<<fi.cdef_bits) {
         //for p in 0..3 {
         //    for i in 0..cdef_output.planes[p].data.len() { cdef_output.planes[p].data[i] = CDEF_VERY_LARGE; }

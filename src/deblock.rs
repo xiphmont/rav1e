@@ -11,6 +11,7 @@
 
 use context::*;
 use rdo::*;
+use cdef::*;
 use partition::PredictionMode::*;
 use partition::*;
 use plane::*;
@@ -1353,6 +1354,7 @@ fn sse_cdef_optimize(fi: &FrameInvariants, fs: &mut FrameState, bc: &mut BlockCo
         fs.deblock.levels[0] = a;
         fs.deblock.levels[1] = b;
         deblock_plane(&fs.deblock, &mut fs.rec.planes[0], 0, bc, bd);
+        //cdef_filter_plane(fi, &mut fs.rec, bc, bd, 0);  
         let err = compute_rd_cost(fi, fs, fi.width, fi.height, false, &BlockOffset{x:0, y:0}, 0, bd, true);
         if err < best_err || (a==0 && b == 0) {
           best_a = a;
@@ -1374,6 +1376,7 @@ fn sse_cdef_optimize(fi: &FrameInvariants, fs: &mut FrameState, bc: &mut BlockCo
     for a in 0..MAX_LOOP_FILTER as u8 {
       fs.deblock.levels[level_idx] = a;
       deblock_plane(&fs.deblock, &mut fs.rec.planes[pli], pli, bc, bd);
+      //cdef_filter_plane(fi, &mut fs.rec, bc, bd, pli);  
       let err = compute_rd_cost(fi, fs, fi.width, fi.height, false, &BlockOffset{x:0, y:0}, 0, bd, false);
       if err < best_err || a==0 {
         best = a;
