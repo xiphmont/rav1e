@@ -10,6 +10,7 @@
 #![allow(safe_extern_statics)]
 
 use context::*;
+use rdo::*;
 use partition::PredictionMode::*;
 use partition::*;
 use plane::*;
@@ -1339,6 +1340,51 @@ fn sse_optimize(fs: &mut FrameState, bc: &mut BlockContext, bit_depth: usize) {
   }
 }
 
+// exhaustive testing tests
+fn sse_cdef_optimize(fi: &FrameInvariants, fs: &mut FrameState, bc: &mut BlockContext, bd: usize) {
+  {
+    let mut best_a = 0;
+    let mut best_b = 0;
+    let mut best_err:f64 = 0.;
+    let p = fs.rec.planes[0].clone();
+
+    for a in 0..MAX_LOOP_FILTER as u8 {
+      for b in 0..MAX_LOOP_FILTER as u8 {
+        fs.deblock.levels[0] = a;
+        fs.deblock.levels[1] = b;
+        deblock_plane(&fs.deblock, &mut fs.rec.planes[0], 0, bc, bd);
+        let err = compute_rd_cost(fi, fs, fi.width, fi.height, false, &BlockOffset{x:0, y:0}, 0, bd, true);
+        if err < best_err || (a==0 && b == 0) {
+          best_a = a;
+          best_b = b;
+          best_err = err;
+        }
+        fs.rec.planes[0].data.copy_from_slice(&p.data);
+      }
+    }
+    fs.deblock.levels[0] = best_a;
+    fs.deblock.levels[1] = best_b;
+  }
+  
+  for pli in 1..3 {
+    let mut best = 0;
+    let mut best_err:f64 = 0.;
+    let level_idx = pli+1;
+    let p = fs.rec.planes[pli].clone();
+    for a in 0..MAX_LOOP_FILTER as u8 {
+      fs.deblock.levels[level_idx] = a;
+      deblock_plane(&fs.deblock, &mut fs.rec.planes[pli], pli, bc, bd);
+      let err = compute_rd_cost(fi, fs, fi.width, fi.height, false, &BlockOffset{x:0, y:0}, 0, bd, false);
+      if err < best_err || a==0 {
+        best = a;
+        best_err = err;
+      }
+      fs.rec.planes[pli].data.copy_from_slice(&p.data);
+    }
+    fs.deblock.levels[level_idx] = best;
+  }  
+}
+
 pub fn deblock_filter_optimize(
   fi: &FrameInvariants, fs: &mut FrameState, bc: &mut BlockContext,
   bit_depth: usize
@@ -1379,6 +1425,6 @@ pub fn deblock_filter_optimize(
     fs.deblock.levels[2] = level;
     fs.deblock.levels[3] = level;
   } else {
-    sse_optimize(fs, bc, bit_depth);
+    sse_cdef_optimize(fi, fs, bc, bit_depth);
   }
 }
