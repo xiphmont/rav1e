@@ -455,12 +455,12 @@ pub fn cdef_filter_frame(fi: &FrameInvariants, rec: &mut Frame, bc: &mut BlockCo
 
     // Perform actual CDEF, using the padded copy as source, and the input rec vector as destination.
     for fby in 0..fb_height {
-        for fbx in 0..fb_width {
-            let sbo = SuperBlockOffset { x: fbx, y: fby };
-            let cdef_index = bc.at(&sbo.block_offset(0, 0)).cdef_index;
-            let cdef_dirs = cdef_analyze_superblock(&mut rec.planes[0], bc, &sbo, &sbo, bit_depth);
-            cdef_filter_superblock(fi, &mut cdef_frame, rec, bc, &sbo, &sbo, bit_depth, cdef_index, &cdef_dirs);
-        }
+      for fbx in 0..fb_width {
+        let sbo = SuperBlockOffset { x: fbx, y: fby };
+        let cdef_index = bc.at(&sbo.block_offset(0, 0)).cdef_index;
+        let cdef_dirs = cdef_analyze_superblock(&mut rec.planes[0], bc, &sbo, &sbo, bit_depth);
+        cdef_filter_superblock(fi, &mut cdef_frame, rec, bc, &sbo, &sbo, bit_depth, cdef_index, &cdef_dirs);
+      }
     }
 }
 
