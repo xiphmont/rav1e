@@ -240,11 +240,11 @@ pub fn cdef_sb_frame(fi: &FrameInvariants, f: &Frame) -> Frame {
   let out = Frame {
     planes: [
       Plane::new(sb_size >> f.planes[0].cfg.xdec, sb_size >> f.planes[0].cfg.ydec,
-                 f.planes[0].cfg.xdec, f.planes[0].cfg.ydec, 0, 0),
+                 f.planes[0].cfg.xdec, f.planes[0].cfg.ydec, 3, 3),
       Plane::new(sb_size >> f.planes[1].cfg.xdec, sb_size >> f.planes[1].cfg.ydec,
-                 f.planes[1].cfg.xdec, f.planes[1].cfg.ydec, 0, 0),
+                 f.planes[1].cfg.xdec, f.planes[1].cfg.ydec, 3, 3),
       Plane::new(sb_size >> f.planes[2].cfg.xdec, sb_size >> f.planes[2].cfg.ydec,
-                 f.planes[2].cfg.xdec, f.planes[2].cfg.ydec, 0, 0),
+                 f.planes[2].cfg.xdec, f.planes[2].cfg.ydec, 3, 3),
     ]
   };
   out
@@ -257,11 +257,11 @@ pub fn cdef_sb_padded_frame_copy(fi: &FrameInvariants, sbo: &SuperBlockOffset,
   let mut out = Frame {
     planes: [
       Plane::new((sb_size >> f.planes[0].cfg.xdec) + pad*2, (sb_size >> f.planes[0].cfg.ydec) + pad*2,
-                 f.planes[0].cfg.xdec, f.planes[0].cfg.ydec, 0, 0),
+                 f.planes[0].cfg.xdec, f.planes[0].cfg.ydec, 3, 3),
       Plane::new((sb_size >> f.planes[1].cfg.xdec) + pad*2, (sb_size >> f.planes[1].cfg.ydec) + pad*2,
-                 f.planes[1].cfg.xdec, f.planes[1].cfg.ydec, 0, 0),
+                 f.planes[1].cfg.xdec, f.planes[1].cfg.ydec, 3, 3),
       Plane::new((sb_size >> f.planes[2].cfg.xdec) + pad*2, (sb_size >> f.planes[2].cfg.ydec) + pad*2,
-                 f.planes[2].cfg.xdec, f.planes[2].cfg.ydec, 0, 0),
+                 f.planes[2].cfg.xdec, f.planes[2].cfg.ydec, 3, 3),
     ]
   };
   // Copy data into padded frame
@@ -299,6 +299,18 @@ pub fn cdef_sb_padded_frame_copy(fi: &FrameInvariants, sbo: &SuperBlockOffset,
       }
     }
   }
+  out
+}
+
+
+pub fn cdef_empty_frame(f: &Frame) -> Frame {
+  let out = Frame {
+    planes: [
+      Plane::new(0, 0, f.planes[0].cfg.xdec, f.planes[0].cfg.ydec, 0, 0),
+      Plane::new(0, 0, f.planes[0].cfg.xdec, f.planes[0].cfg.ydec, 0, 0),
+      Plane::new(0, 0, f.planes[0].cfg.xdec, f.planes[0].cfg.ydec, 0, 0),
+    ]
+  };
   out
 }
 

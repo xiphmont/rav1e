@@ -2725,7 +2725,6 @@ fn encode_tile(fi: &FrameInvariants, fs: &mut FrameState) -> Vec<u8> {
         for sbx in 0..fi.sb_width {
             let mut w_pre_cdef = WriterRecorder::new();
             let mut w_post_cdef = WriterRecorder::new();
-            let mut cdef_index = 0;
             let sbo = SuperBlockOffset { x: sbx, y: sby };
             let bo = sbo.block_offset(0, 0);
             cw.bc.cdef_coded = false;
@@ -2788,15 +2787,13 @@ fn encode_tile(fi: &FrameInvariants, fs: &mut FrameState) -> Vec<u8> {
                                          BlockSize::BLOCK_64X64, &bo, &None, &pmvs);
             }
 
-            // CDEF has to be decisded before loop restoration, but coded after
-            if cw.bc.cdef_coded {
-                cdef_index = rdo_cdef_decision(&sbo, fi, fs, &mut cw);
-                cw.bc.set_cdef(&sbo, cdef_index);
+            // CDEF has to be decided before loop restoration, but coded after.
+            // loop restoration must be decided last but coded before anything else.
+            if cw.bc.cdef_coded || fi.sequence.enable_restoration {
+                rdo_loop_decision(&sbo, fi, fs, &mut cw, &mut w);
             }
 
-            // loop restoration must be decided last but coded before anything else
             if fi.sequence.enable_restoration {
-                fs.restoration.lrf_optimize_superblock(&sbo, fi, &mut cw);
                 cw.write_lrf(&mut w, fi, &mut fs.restoration, &sbo);
             }
 
@@ -2805,6 +2802,7 @@ fn encode_tile(fi: &FrameInvariants, fs: &mut FrameState) -> Vec<u8> {
 
             if cw.bc.cdef_coded {
                 // CDEF index must be written in the middle, we can code it now
+                let cdef_index = cw.bc.get_cdef(&sbo);
                 cw.write_cdef(&mut w, cdef_index, fi.cdef_bits);
                 // ...and then finally code what comes after the CDEF index
                 w_post_cdef.replay(&mut w);
