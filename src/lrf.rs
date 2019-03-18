@@ -880,7 +880,7 @@ impl RestorationPlane {
   }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct RestorationState {
   pub planes: [RestorationPlane; PLANES]
 }
@@ -952,8 +952,12 @@ impl RestorationState {
           } else {
             rp.cfg.unit_size
           };
-          let ru = rp.restoration_unit_by_stripe(si, rux);
-          match ru.filter {
+          let filter = {
+            let ru = rp.restoration_unit_by_stripe(si, rux);
+            let ru = ru.lock().unwrap();
+            ru.filter
+          };
+          match filter {
             RestorationFilter::Wiener{coeffs} => {
               wiener_stripe_filter(coeffs, fi,
                                    crop_w, crop_h,
