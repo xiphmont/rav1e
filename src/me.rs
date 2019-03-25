@@ -350,8 +350,7 @@ pub trait MotionEstimation {
     bo: BlockOffset, lambda: u32, pmv: [MotionVector; 2],
     mvx_min: isize, mvx_max: isize, mvy_min: isize, mvy_max: isize,
     blk_w: usize, blk_h: usize, best_mv: &mut MotionVector,
-    lowest_cost: &mut u64, ref_frame: usize,
-    tmp_plane: Plane<T>, bsize: BlockSize
+    lowest_cost: &mut u64, ref_frame: usize
   );
 
   fn motion_estimation<T: Pixel> (
@@ -379,11 +378,9 @@ pub trait MotionEstimation {
                            mvx_min, mvx_max, mvy_min, mvy_max, blk_w, blk_h,
                            &mut best_mv, &mut lowest_cost, ref_frame);
 
-        let tmp_plane = Plane::new(blk_w, blk_h, 0, 0, 0, 0);
         Self::sub_pixel_me(fi, fs, rec, bo, lambda, pmv,
                            mvx_min, mvx_max, mvy_min, mvy_max, blk_w, blk_h,
-                           &mut best_mv, &mut lowest_cost, ref_frame,
-                           tmp_plane, bsize);
+                           &mut best_mv, &mut lowest_cost, ref_frame);
 
         best_mv
       }
@@ -475,7 +472,7 @@ impl MotionEstimation for DiamondSearch {
       blk_h,
       best_mv,
       lowest_cost,
-      &mut None,
+      false,
       ref_frame
     );
   }
@@ -486,7 +483,6 @@ impl MotionEstimation for DiamondSearch {
     pmv: [MotionVector; 2], mvx_min: isize, mvx_max: isize,
     mvy_min: isize, mvy_max: isize, blk_w: usize, blk_h: usize,
     best_mv: &mut MotionVector, lowest_cost: &mut u64, ref_frame: usize,
-    tmp_plane: Plane<T>, _bsize: BlockSize
   )
   {
     let predictors = vec![*best_mv];
@@ -507,7 +503,7 @@ impl MotionEstimation for DiamondSearch {
       blk_h,
       best_mv,
       lowest_cost,
-      &mut Some(tmp_plane),
+      true,
       ref_frame
     );
   }
@@ -544,7 +540,7 @@ impl MotionEstimation for DiamondSearch {
           mvx_min >> 1, mvx_max >> 1, mvy_min >> 1, mvy_max >> 1,
           blk_w >> 1, blk_h >> 1,
           best_mv, lowest_cost,
-          &mut None, 0
+          false, 0
         );
       }
     }
@@ -594,15 +590,13 @@ impl MotionEstimation for FullSearch {
     fi: &FrameInvariants<T>, fs: &FrameState<T>, _rec: &Arc<ReferenceFrame<T>>,
     bo: BlockOffset, lambda: u32,
     pmv: [MotionVector; 2], mvx_min: isize, mvx_max: isize,
-    mvy_min: isize, mvy_max: isize, _blk_w: usize, _blk_h: usize,
+    mvy_min: isize, mvy_max: isize, blk_w: usize, blk_h: usize,
     best_mv: &mut MotionVector, lowest_cost: &mut u64, ref_frame: usize,
-    mut tmp_plane: Plane<T>, bsize: BlockSize
   )
   {
     telescopic_subpel_search(
       fi,
       fs,
-      bsize,
       bo.to_luma_plane_offset(),
       lambda,
       ref_frame,
@@ -611,7 +605,8 @@ impl MotionEstimation for FullSearch {
       mvx_max,
       mvy_min,
       mvy_max,
-      &mut tmp_plane,
+      blk_w,
+      blk_h,
       best_mv,
       lowest_cost
     );
@@ -690,16 +685,20 @@ fn diamond_me_search<T: Pixel>(
   mvx_min: isize, mvx_max: isize, mvy_min: isize, mvy_max: isize,
   blk_w: usize, blk_h: usize,
   center_mv: &mut MotionVector, center_mv_cost: &mut u64,
-  tmp_plane_opt: &mut Option<Plane<T>>, ref_frame: usize)
+  subpixel: bool, ref_frame: usize)
 {
   let diamond_pattern = [(1i16, 0i16), (0, 1), (-1, 0), (0, -1)];
-  let (mut diamond_radius, diamond_radius_end) = {
-    if tmp_plane_opt.is_some() {
+  let (mut diamond_radius, diamond_radius_end, mut tmp_plane_opt) = {
+    if subpixel {
       // Sub-pixel motion estimation
-      (4i16, if fi.allow_high_precision_mv {1i16} else {2i16})
+      (
+        4i16,
+        if fi.allow_high_precision_mv {1i16} else {2i16},
+        Some(Plane::new(blk_w, blk_h, 0, 0, 0, 0)),
+      )
     } else {
       // Full pixel motion estimation
-      (16i16, 8i16)
+      (16i16, 8i16, None)
     }
   };
 
@@ -707,7 +706,7 @@ fn diamond_me_search<T: Pixel>(
     fi, po, p_org, p_ref, &predictors,
     bit_depth, pmv, lambda, mvx_min, mvx_max, mvy_min, mvy_max,
     blk_w, blk_h, center_mv, center_mv_cost,
-    tmp_plane_opt, ref_frame);
+    &mut tmp_plane_opt, ref_frame);
 
   loop {
     let mut best_diamond_rd_cost = std::u64::MAX;
@@ -723,7 +722,7 @@ fn diamond_me_search<T: Pixel>(
         let rd_cost = get_mv_rd_cost(
           fi, po, p_org, p_ref, bit_depth,
           pmv, lambda, mvx_min, mvx_max, mvy_min, mvy_max,
-          blk_w, blk_h, cand_mv, tmp_plane_opt, ref_frame);
+          blk_w, blk_h, cand_mv, &mut tmp_plane_opt, ref_frame);
 
         if rd_cost < best_diamond_rd_cost {
           best_diamond_rd_cost = rd_cost;
@@ -812,20 +811,20 @@ fn compute_mv_rd_cost<T: Pixel>(
 }
 
 fn telescopic_subpel_search<T: Pixel>(
-  fi: &FrameInvariants<T>, fs: &FrameState<T>, bsize: BlockSize, po: PlaneOffset,
+  fi: &FrameInvariants<T>, fs: &FrameState<T>, po: PlaneOffset,
   lambda: u32, ref_frame: usize, pmv: [MotionVector; 2],
   mvx_min: isize, mvx_max: isize, mvy_min: isize, mvy_max: isize,
-  tmp_plane: &mut Plane<T>, best_mv: &mut MotionVector, lowest_cost: &mut u64
+  blk_w: usize, blk_h: usize,
+  best_mv: &mut MotionVector, lowest_cost: &mut u64
 ) {
-  let blk_w = bsize.width();
-  let blk_h = bsize.height();
-
   let mode = PredictionMode::NEWMV;
 
   let mut steps = vec![8, 4, 2];
   if fi.allow_high_precision_mv {
     steps.push(1);
   }
+
+  let mut tmp_plane = Plane::new(blk_w, blk_h, 0, 0, 0, 0);
 
   for step in steps {
     let center_mv_h = *best_mv;

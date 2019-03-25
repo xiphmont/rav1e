@@ -7,6 +7,8 @@
 // Media Patent License 1.0 was not distributed with this source code in the
 // PATENTS file, you can obtain it at www.aomedia.org/license/patent.
 
+#![allow(non_upper_case_globals)]
+
 use crate::api::*;
 use crate::cdef::*;
 use crate::context::*;
@@ -546,6 +548,7 @@ pub struct FrameInvariants<T: Pixel> {
   pub use_tx_domain_rate: bool,
   pub inter_cfg: Option<InterPropsConfig>,
   pub enable_early_exit: bool,
+  pub tx_mode_select: bool,
 }
 
 pub(crate) fn pos_to_lvl(pos: u64, pyramid_depth: u64) -> u64 {
@@ -629,6 +632,7 @@ impl<T: Pixel> FrameInvariants<T> {
       inter_cfg: None,
       enable_early_exit: true,
       config,
+      tx_mode_select : false,
     }
   }
 
@@ -647,6 +651,7 @@ impl<T: Pixel> FrameInvariants<T> {
     for i in 0..INTER_REFS_PER_FRAME {
       fi.ref_frames[i] = 0;
     }
+    fi.tx_mode_select = true;
     fi
   }
 
@@ -1286,6 +1291,23 @@ pub fn encode_block_b<T: Pixel>(
     }
   }
 
+  // Were we not hardcoded to TX_MODE_LARGEST, block tx size would be written here
+
+  // write tx_size here (for now, intra frame only)
+  // TODO: Add new field tx_mode to fi, then Use the condition, fi.tx_mode == TX_MODE_SELECT
+  if fi.tx_mode_select {
+    if bsize.greater_than(BlockSize::BLOCK_4X4) && !(is_inter && skip) {
+      if !is_inter {
+        cw.write_tx_size_intra(w, bo, bsize, tx_size);
+        cw.bc.update_tx_size_context(bo, bsize, tx_size, false);
+      } /*else {  // TODO (yushin): write_tx_size_inter(), i.e. var-tx
+
+      }*/
+    } else {
+      cw.bc.update_tx_size_context(bo, bsize, tx_size, is_inter && skip);
+    }
+  }
+
   if is_inter {
     motion_compensate(fi, fs, cw, luma_mode, ref_frames, mvs, bsize, bo, false);
     write_tx_tree(fi, fs, cw, w, luma_mode, bo, bsize, tx_size, tx_type, skip, false, rdo_type, for_rdo_use)
@@ -1356,6 +1378,8 @@ pub fn write_tx_blocks<T: Pixel>(
         y: bo.y + by * tx_size.height_mi()
       };
 
+      cw.bc.set_tx_size(tx_bo, tx_size);
+
       let po = tx_bo.plane_offset(&fs.input.planes[0].cfg);
       let (_, dist) =
         encode_tx_block(
@@ -1369,7 +1393,7 @@ pub fn write_tx_blocks<T: Pixel>(
 
   if luma_only { return tx_dist };
 
-  let uv_tx_size = bsize.largest_uv_tx_size(fi.sequence.chroma_sampling);
+  let uv_tx_size = bsize.largest_uv_tx_size(xdec, ydec);
 
   let mut bw_uv = (bw * tx_size.width_mi()) >> xdec;
   let mut bh_uv = (bh * tx_size.height_mi()) >> ydec;
@@ -1381,6 +1405,16 @@ pub fn write_tx_blocks<T: Pixel>(
 
   bw_uv /= uv_tx_size.width_mi();
   bh_uv /= uv_tx_size.height_mi();
+
+  assert!(bw_uv == 1);
+  assert!(bh_uv == 1);
+
+  if bw_uv != 1 {
+    let _a = 0;
+  }
+  if bh_uv != 1 {
+    let _a = 0;
+  }
 
   let plane_bsize = get_plane_block_size(bsize, xdec, ydec);
 
@@ -1442,6 +1476,8 @@ pub fn write_tx_tree<T: Pixel>(
 
   fs.qc.update(qidx, tx_size, luma_mode.is_intra(), fi.sequence.bit_depth, fi.dc_delta_q[0], 0);
 
+  cw.bc.set_tx_size(bo, tx_size);
+
   let po = bo.plane_offset(&fs.input.planes[0].cfg);
   let (has_coeff, dist) = encode_tx_block(
     fi, fs, cw, w, 0, bo, luma_mode, tx_size, tx_type, bsize, po, skip, ac, 0, rdo_type, for_rdo_use
@@ -1451,7 +1487,7 @@ pub fn write_tx_tree<T: Pixel>(
 
   if luma_only { return tx_dist };
 
-  let uv_tx_size = bsize.largest_uv_tx_size(fi.sequence.chroma_sampling);
+  let uv_tx_size = bsize.largest_uv_tx_size(xdec, ydec);
 
   let mut bw_uv = (bw * tx_size.width_mi()) >> xdec;
   let mut bh_uv = (bh * tx_size.height_mi()) >> ydec;
@@ -1463,6 +1499,9 @@ pub fn write_tx_tree<T: Pixel>(
 
   bw_uv /= uv_tx_size.width_mi();
   bh_uv /= uv_tx_size.height_mi();
+
+  assert!(bw_uv == 1);
+  assert!(bh_uv == 1);
 
   let plane_bsize = get_plane_block_size(bsize, xdec, ydec);
 
@@ -1505,7 +1544,6 @@ pub fn encode_block_with_modes<T: Pixel>(
 
   debug_assert!((tx_size, tx_type) ==
                 rdo_tx_size_type(fi, fs, cw, bsize, bo, mode_luma, ref_frames, mvs, skip));
-  cw.bc.set_tx_size(bo, tx_size);
 
   let mut mv_stack = Vec::new();
   let is_compound = ref_frames[1] != NONE_FRAME;
@@ -2145,6 +2183,12 @@ fn encode_tile<T: Pixel>(fi: &FrameInvariants<T>, fs: &mut FrameState<T>) -> Vec
   }
   /* TODO: Don't apply if lossless */
   deblock_filter_optimize(fi, fs, &mut cw.bc);
+
+  // NOTE(yushin): Temporarilly, disable deblocking-filter
+  // because it causes mismatch btw encoder and decoder when transform partition is enabled.
+  fs.deblock.levels[0] = 0;
+  fs.deblock.levels[1] = 0;
+
   if fs.deblock.levels[0] != 0 || fs.deblock.levels[1] != 0 {
     deblock_filter_frame(fs, &mut cw.bc, fi.sequence.bit_depth);
   }

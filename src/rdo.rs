@@ -363,29 +363,46 @@ pub fn rdo_tx_size_type<T: Pixel>(
   cw: &mut ContextWriter, bsize: BlockSize, bo: BlockOffset,
   luma_mode: PredictionMode, ref_frames: [usize; 2], mvs: [MotionVector; 2], skip: bool
 ) -> (TxSize, TxType) {
-  // these rules follow TX_MODE_LARGEST
-  let tx_size = {
+  use crate::context::max_txsize_rect_lookup;
+  let tx_size = if fi.frame_type == FrameType::INTER || !fi.tx_mode_select {
+    max_txsize_rect_lookup[bsize as usize]
+  } else {
     use self::BlockSize::*;
     use self::TxSize::*;
     match bsize {
+      /*BLOCK_4X4 => TX_4X4,
+      BLOCK_8X8 => TX_4X4,
+      BLOCK_16X16 => TX_8X8,
+      BLOCK_4X8 => TX_4X8,
+      BLOCK_8X4 => TX_8X4,
+      BLOCK_8X16 => TX_8X8,
+      BLOCK_16X8 => TX_8X8,
+      BLOCK_16X32 => TX_16X16,
+      BLOCK_32X16 => TX_16X16,
+      BLOCK_32X32 => TX_16X16,
+      BLOCK_32X64 => TX_32X32,
+      BLOCK_64X32 => TX_32X32,
+      BLOCK_64X64 => TX_32X32,
+      _ => unimplemented!()*/
+
       BLOCK_4X4 => TX_4X4,
-      BLOCK_8X8 => TX_8X8,
-      BLOCK_16X16 => TX_16X16,
+      BLOCK_8X8 => TX_4X4,
+      BLOCK_16X16 => TX_8X8,
       BLOCK_4X8 => TX_4X8,
       BLOCK_8X4 => TX_8X4,
       BLOCK_8X16 => TX_8X16,
       BLOCK_16X8 => TX_16X8,
       BLOCK_16X32 => TX_16X32,
       BLOCK_32X16 => TX_32X16,
-      BLOCK_32X32 => TX_32X32,
+      BLOCK_32X32 => TX_16X16,
       BLOCK_32X64 => TX_32X64,
       BLOCK_64X32 => TX_64X32,
-      BLOCK_64X64 => TX_64X64,
+      BLOCK_64X64 => TX_32X32,
       _ => unimplemented!()
     }
   };
-  cw.bc.set_tx_size(bo, tx_size);
-  // Were we not hardcoded to TX_MODE_LARGEST, block tx size would be written here
+  debug_assert!(tx_size.width_log2() <= bsize.width_log2());
+  debug_assert!(tx_size.height_log2() <= bsize.height_log2());
 
   // Luma plane transform type decision
   let is_inter = !luma_mode.is_intra();
@@ -820,7 +837,7 @@ pub fn rdo_mode_decision<T: Pixel>(
       false
     );
     cw.rollback(&cw_checkpoint);
-    if let Some(cfl) = rdo_cfl_alpha(fs, bo, bsize, fi.sequence.bit_depth, fi.sequence.chroma_sampling) {
+    if let Some(cfl) = rdo_cfl_alpha(fs, bo, bsize, fi.sequence.bit_depth) {
       let wr: &mut dyn Writer = &mut WriterCounter::new();
       let tell = wr.tell_frac();
 
@@ -892,10 +909,10 @@ pub fn rdo_mode_decision<T: Pixel>(
 }
 
 pub fn rdo_cfl_alpha<T: Pixel>(
-  fs: &mut FrameState<T>, bo: BlockOffset, bsize: BlockSize, bit_depth: usize,
-  chroma_sampling: ChromaSampling
+  fs: &mut FrameState<T>, bo: BlockOffset, bsize: BlockSize, bit_depth: usize
 ) -> Option<CFLParams> {
-  let uv_tx_size = bsize.largest_uv_tx_size(chroma_sampling);
+  let PlaneConfig { xdec, ydec, .. } = fs.input.planes[1].cfg;
+  let uv_tx_size = bsize.largest_uv_tx_size(xdec, ydec);
 
   let mut ac: AlignedArray<[i16; 32 * 32]> = UninitializedAlignedArray();
   luma_ac(&mut ac.array, fs, bo, bsize);
