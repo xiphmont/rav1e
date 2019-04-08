@@ -2092,7 +2092,6 @@ fn encode_tile<'a, T: Pixel>(
   };
 
   let bc = BlockContext::new(blocks);
-  // For now, restoration unit size is locked to superblock size.
   let mut cw = ContextWriter::new(fc, bc);
 
   let tile_pmvs = build_coarse_pmvs(fi, ts);

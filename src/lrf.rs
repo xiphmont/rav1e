@@ -889,14 +889,15 @@ impl RestorationState {
   pub fn new<T: Pixel>(fi: &FrameInvariants<T>, input: &Frame<T>) -> Self {
     let PlaneConfig { xdec, ydec, .. } = input.planes[1].cfg;
     let stripe_uv_decimate = if xdec>0 && ydec>0 {1} else {0};
-    // Currrently opt for smallest possible restoration unit size (1
-    // superblock) This is *temporary*.  Counting on it will break
-    // very shortly; the 1-superblock hardwiring is only until the
-    // upper level encoder is capable of dealing with the delayed
-    // writes that RU size > SB size will require.
-    let lrf_y_shift = if fi.sequence.use_128x128_superblock {1} else {2};
-    let lrf_uv_shift = lrf_y_shift + stripe_uv_decimate;
+    // Currrently opt for largest possible restoration unit size (256) for both luma and chroma
+    let lrf_y_shift = 0;
+    let lrf_uv_shift = 0;
 
+    // By way of example, smallest possible LRF size would be:
+    // let lrf_y_shift = if fi.sequence.use_128x128_superblock {1} else {2};
+    // let lrf_uv_shift = lrf_y_shift + stripe_uv_decimate;
+    // ...eg, the size of the superblock and no smaller
+ 
     // derive the rest
     let y_unit_log2 = RESTORATION_TILESIZE_MAX_LOG2 - lrf_y_shift;
     let uv_unit_log2 = RESTORATION_TILESIZE_MAX_LOG2 - lrf_uv_shift;
@@ -952,12 +953,8 @@ impl RestorationState {
           } else {
             rp.cfg.unit_size
           };
-          let filter = {
-            let ru = rp.restoration_unit_by_stripe(si, rux);
-            let ru = ru.lock().unwrap();
-            ru.filter
-          };
-          match filter {
+          let ru = rp.restoration_unit_by_stripe(si, rux);
+          match ru.filter {
             RestorationFilter::Wiener{coeffs} => {
               wiener_stripe_filter(coeffs, fi,
                                    crop_w, crop_h,
