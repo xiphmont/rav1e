@@ -1431,6 +1431,8 @@ pub fn rdo_loop_decision<T: Pixel>(sbo: SuperBlockOffset, fi: &FrameInvariants<T
     if !lrf_change || !cdef_change{
       break;
     }
+
+    break; //test to force single iteration
   }
 
   if cw.bc.cdef_coded {
