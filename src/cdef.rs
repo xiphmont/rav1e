@@ -192,6 +192,30 @@ fn adjust_strength(strength: i32, var: i32) -> i32 {
 // in_frame is padded.  Blocks are not scanned outside the block
 // boundaries (padding is untouched here).
 
+pub fn cdef_analyze_superblock_range<T: Pixel>(
+  in_frame: &Frame<T>,
+  blocks: &TileBlocks<'_>,
+  sbo: SuperBlockOffset,
+  sbo_global: SuperBlockOffset,
+  sb_wh: usize,
+  bit_depth: usize,
+) -> Vec<Vec<CdefDirections>> {
+  let mut ret: Vec<Vec<CdefDirections>> = Vec::new();
+  for sby in 0..sb_wh {
+    ret.push(Vec::new());
+    for sbx in 0..sb_wh {
+      let local_sbo = SuperBlockOffset {x: sbo.x+sbx, y: sbo.y+sby};
+      let toplevel_sbo = SuperBlockOffset {x: sbo_global.x+sbx, y: sbo_global.y+sby};
+      ret[sby].push(cdef_analyze_superblock(in_frame, blocks, local_sbo, toplevel_sbo, bit_depth));
+    }
+  }
+  ret
+}
+
+  // For convenience of use alongside cdef_filter_superblock, we assume
+// in_frame is padded.  Blocks are not scanned outside the block
+// boundaries (padding is untouched here).
+
 pub fn cdef_analyze_superblock<T: Pixel>(
   in_frame: &Frame<T>,
   blocks: &TileBlocks<'_>,
@@ -232,8 +256,8 @@ pub fn cdef_analyze_superblock<T: Pixel>(
 }
 
 
-pub fn cdef_sb_frame<T: Pixel>(fi: &FrameInvariants<T>, tile: &Tile<'_, T>) -> Frame<T> {
-  let sb_size = if fi.sequence.use_128x128_superblock {128} else {64};
+pub fn cdef_sb_frame<T: Pixel>(fi: &FrameInvariants<T>, sb_wh: usize, tile: &Tile<'_, T>) -> Frame<T> {
+  let sb_size = if fi.sequence.use_128x128_superblock {128} else {64} * sb_wh;
 
   Frame {
     planes: [
@@ -254,11 +278,11 @@ pub fn cdef_sb_frame<T: Pixel>(fi: &FrameInvariants<T>, tile: &Tile<'_, T>) -> F
 }
 
 pub fn cdef_sb_padded_frame_copy<T: Pixel>(
-  fi: &FrameInvariants<T>, sbo: SuperBlockOffset,
+  fi: &FrameInvariants<T>, sbo: SuperBlockOffset, sb_wh: usize,
   tile: &Tile<'_, T>, pad: usize
 ) -> Frame<u16> {
   let ipad = pad as isize;
-  let sb_size = if fi.sequence.use_128x128_superblock {128} else {64};
+  let sb_size = if fi.sequence.use_128x128_superblock {128} else {64} * sb_wh;
   let mut out = Frame {
     planes: [
       {

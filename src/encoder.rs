@@ -2166,6 +2166,7 @@ fn encode_tile<'a, T: Pixel>(
   let mut sbs_q: VecDeque<SBSQueueEntry> = VecDeque::new();
   let mut last_lru_ready = [-1;3];
   let mut last_lru_rdoed = [-1;3];
+  let mut last_lru_coded = [-1;3];
 
   let tile_pmvs = build_coarse_pmvs(fi, ts);
 
@@ -2261,7 +2262,7 @@ fn encode_tile<'a, T: Pixel>(
 
       {
         let mut check_queue = false;
-        // queue our superblock for cdef/LRF RDO when the RDU is complete
+        // queue our superblock for when the RDU is complete
         sbs_qe.cdef_coded = cw.bc.cdef_coded;
         for pli in 0..PLANES {
           let lru_index = ts.restoration.planes[pli].restoration_unit_countable(tile_sbo) as i32;
@@ -2315,7 +2316,12 @@ fn encode_tile<'a, T: Pixel>(
               }
               // write LRF information
               if fi.sequence.enable_restoration {
-                cw.write_lrf(&mut w, fi, &mut ts.restoration, qe.sbo);
+                for pli in 0..PLANES {
+                  if last_lru_coded[pli] < qe.lru_index[pli] {
+                    last_lru_coded[pli] = qe.lru_index[pli];
+                    cw.write_lrf(&mut w, fi, &mut ts.restoration, qe.sbo, pli);
+                  }
+                }
               }
               // Now that loop restoration is coded, we can replay the initial block bits
               qe.w_pre_cdef.replay(&mut w);
