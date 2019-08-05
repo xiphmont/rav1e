@@ -1400,7 +1400,8 @@ pub fn rdo_loop_decision<T: Pixel>(tile_sbo: SuperBlockOffset, fi: &FrameInvaria
                     // only run on this superblock
                     // if height is 128x128, we'll need to run two stripes
                     let loop_po = loop_sbo.plane_offset(&lrf_input.planes[pli].cfg);
-                    if height > 64 {
+
+                    if height > 64 {  // no, can be 32
                       let loop_po2 = PlaneOffset{x: loop_po.x, y: loop_po.y+64};
                       sgrproj_stripe_filter(set, xqd, fi,
                                             width, 64, width, 64,
@@ -1475,62 +1476,60 @@ pub fn rdo_loop_decision<T: Pixel>(tile_sbo: SuperBlockOffset, fi: &FrameInvaria
             let loop_sbo = SuperBlockOffset{x: lru_x * wh, y: lru_y * wh}; 
             let loop_tile_sbo = SuperBlockOffset{x: tile_sbo.x+loop_sbo.x, y: tile_sbo.y+loop_sbo.y};
             if fi.sequence.enable_restoration &&
-
-
-
-              
               ts.restoration.has_restoration_unit(loop_tile_sbo, pli) {
-              let in_plane = &ts.input.planes[pli];  // reference
-              let cdef_plane = &lrf_input.planes[pli];
-              let loop_po = loop_sbo.plane_offset(&cdef_plane.cfg);
-              let loop_tile_po = loop_tile_sbo.plane_offset(&in_plane.cfg);
-              let mut best_new_lrf = RestorationFilter::None;
-              let err = rdo_loop_plane_error(loop_sbo, loop_tile_sbo, wh, fi, ts,
-                                             &cw.bc.blocks.as_const(), &lrf_input, pli);
-              let rate = cw.count_lrf_switchable(w, &ts.restoration.as_const(), best_new_lrf, pli);
-              let mut best_cost = compute_rd_cost(fi, rate, err);
-
-                for set in 0..16 {
-                  // clip to real crop frame
-                  let unit_width = unit_size.min(in_plane.cfg.width - loop_tile_po.x as usize);
-                  let unit_height = unit_size.min(in_plane.cfg.height - loop_tile_po.y as usize);
-                  let (xqd0, xqd1) =
-                    sgrproj_solve(set, fi, &in_plane.slice(loop_tile_po), &cdef_plane.slice(loop_po),
-                                unit_width, unit_height);
+                let in_plane = &ts.input.planes[pli];  // reference
+                let cdef_plane = &lrf_input.planes[pli];
+                let loop_po = loop_sbo.plane_offset(&cdef_plane.cfg);
+                let loop_tile_po = loop_tile_sbo.plane_offset(&in_plane.cfg);
+                let mut best_new_lrf = RestorationFilter::None;
+                let err = rdo_loop_plane_error(loop_sbo, loop_tile_sbo, wh, fi, ts,
+                                               &cw.bc.blocks.as_const(), &lrf_input, pli);
+                let rate = cw.count_lrf_switchable(w, &ts.restoration.as_const(), best_new_lrf, pli);
+                let mut best_cost = compute_rd_cost(fi, rate, err);
                 
-                  let current_lrf = RestorationFilter::Sgrproj{set, xqd: [xqd0, xqd1]};
-                  if let RestorationFilter::Sgrproj{set, xqd} = current_lrf {
-                    // one stripe at a time
-                    // doesn't consider stretch yet
-                    for y in (0..unit_height).step_by(stripe_height) {
-                      let stripe_po = PlaneOffset{x: loop_po.x, y: loop_po.y + y as isize};
-                      let stripe_h = unit_size.min(stripe_height);
-                      sgrproj_stripe_filter(set, xqd, fi,
-                                            unit_width,stripe_h,unit_width,stripe_h,
-                                            &lrf_input.planes[pli].slice(stripe_po),
-                                            &lrf_input.planes[pli].slice(stripe_po),
-                                            &mut lrf_output.planes[pli].mut_slice(stripe_po));
+                if false {
+                  for set in 0..16 {
+                    // clip to real crop frame
+                    let unit_width = unit_size.min(in_plane.cfg.width - loop_tile_po.x as usize);
+                    let unit_height = unit_size.min(in_plane.cfg.height - loop_tile_po.y as usize);
+                    let (xqd0, xqd1) =
+                      sgrproj_solve(set, fi, &in_plane.slice(loop_tile_po), &cdef_plane.slice(loop_po),
+                                    unit_width, unit_height);
+                    
+                    let current_lrf = RestorationFilter::Sgrproj{set, xqd: [xqd0, xqd1]};
+                    if let RestorationFilter::Sgrproj{set, xqd} = current_lrf {
+                      // one stripe at a time
+                      // doesn't consider stretch yet
+                      for y in (0..unit_height).step_by(stripe_height) {
+                        let stripe_po = PlaneOffset{x: loop_po.x, y: loop_po.y + y as isize};
+                        let stripe_h = unit_size.min(stripe_height);
+                        sgrproj_stripe_filter(set, xqd, fi,
+                                              unit_width,stripe_h,unit_width,stripe_h,
+                                              &lrf_input.planes[pli].slice(stripe_po),
+                                              &lrf_input.planes[pli].slice(stripe_po),
+                                              &mut lrf_output.planes[pli].mut_slice(stripe_po));
+                      }
+                    }
+                    let err = rdo_loop_plane_error(loop_sbo, loop_tile_sbo, wh, fi, ts,
+                                                   &cw.bc.blocks.as_const(), &lrf_output, pli);
+                    let rate = cw.count_lrf_switchable(w, &ts.restoration.as_const(), current_lrf, pli);
+                    let cost = compute_rd_cost(fi, rate, err);
+                    
+                    if cost<best_cost {
+                      best_cost = cost;
+                      best_new_lrf = current_lrf;
+                    }
                   }
                 }
-                let err = rdo_loop_plane_error(loop_sbo, loop_tile_sbo, wh, fi, ts,
-                                           &cw.bc.blocks.as_const(), &lrf_output, pli);
-                let rate = cw.count_lrf_switchable(w, &ts.restoration.as_const(), current_lrf, pli);
-                let cost = compute_rd_cost(fi, rate, err);
-
-                if best_cost<0. || cost<best_cost {
-                  best_cost = cost;
-                  best_new_lrf = current_lrf;
+                
+                if best_lrf[pli][lru_y][lru_x].notequal(&best_new_lrf) {
+                  best_lrf[pli][lru_y][lru_x] = best_new_lrf;
+                  lrf_change = true;
+                  if let Some(ru) = ts.restoration.planes[pli].restoration_unit_mut(loop_tile_sbo) {
+                    ru.filter = best_new_lrf;
+                  }
                 }
               }
-              
-              if best_lrf[pli][lru_y][lru_x].notequal(&best_new_lrf) {
-                best_lrf[pli][lru_y][lru_x] = best_new_lrf;
-                lrf_change = true;
-                if let Some(ru) = ts.restoration.planes[pli].restoration_unit_mut(tile_sbo) {
-                  ru.filter = best_new_lrf;
-                }
-              }
-            }
           }
         }
       }
