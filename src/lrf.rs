@@ -769,8 +769,10 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
       ((div1 / det).round() as i32, (div2 / det).round() as i32)
     }
   };
-  (clamp(xq0, SGRPROJ_XQD_MIN[0] as i32, SGRPROJ_XQD_MAX[0] as i32) as i8,
-   clamp(xq1, SGRPROJ_XQD_MIN[1] as i32, SGRPROJ_XQD_MAX[1] as i32) as i8)
+  let xqd0 = clamp(xq0, SGRPROJ_XQD_MIN[0] as i32, SGRPROJ_XQD_MAX[0] as i32);
+  let xqd1 = clamp((1 << SGRPROJ_PRJ_BITS) - xqd0 - xq1,
+                   SGRPROJ_XQD_MIN[1] as i32, SGRPROJ_XQD_MAX[1] as i32);
+  (xqd0 as i8, xqd1 as i8)
 }
 
 fn wiener_stripe_filter<T: Pixel>(coeffs: [[i8; 3]; 2], fi: &FrameInvariants<T>,
