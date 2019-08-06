@@ -721,7 +721,7 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
 
       for x in 0..cdef_w {
         let u = i32::cast_from(cdeffed.p(x, y)) << SGRPROJ_RST_BITS;
-        let s = i32::cast_from(input.p(x,y)) << SGRPROJ_RST_BITS;
+        let s = (i32::cast_from(input.p(x,y)) << SGRPROJ_RST_BITS) - u;
         let f2 = f_r2_01[dy][x] as i32 - u;
         let f1 = f_r1[x] as i32 - u;
         h[0][0] += f2 as f64 * f2 as f64;
@@ -739,8 +739,8 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
   h[0][1] /= n;
   h[1][1] /= n;
   h[1][0] = h[0][1];
-  c[0] /= n;
-  c[1] /= n;
+  c[0] *= (1 << SGRPROJ_PRJ_BITS) as f64 / n;
+  c[1] *= (1 << SGRPROJ_PRJ_BITS) as f64 / n;
   let (xq0, xq1) = if s_r2 == 0 {
     // H matrix is now only the scalar h[1][1]
     // C vector is now only the scalar c[1]
@@ -763,8 +763,8 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
       (0, 0)
     } else {
       // If scaling up dividend would overflow, instead scale down the divisor
-      let div1 = (h[1][1] * c[0] - h[0][1] * c[1]) * (1 << SGRPROJ_PRJ_BITS) as f64;
-      let div2 = (h[0][0] * c[1] - h[1][0] * c[0]) * (1 << SGRPROJ_PRJ_BITS) as f64;
+      let div1 = h[1][1] * c[0] - h[0][1] * c[1];
+      let div2 = h[0][0] * c[1] - h[1][0] * c[0];
 
       ((div1 / det).round() as i32, (div2 / det).round() as i32)
     }
