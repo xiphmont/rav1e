@@ -739,8 +739,8 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
   h[0][1] /= n;
   h[1][1] /= n;
   h[1][0] = h[0][1];
-  c[0] *= (1 << SGRPROJ_PRJ_BITS) as f64 / n;
-  c[1] *= (1 << SGRPROJ_PRJ_BITS) as f64 / n;
+  c[0] = c[0] * (1 << SGRPROJ_PRJ_BITS) as f64 / n;
+  c[1] = c[1] * (1 << SGRPROJ_PRJ_BITS) as f64 / n;
   let (xq0, xq1) = if s_r2 == 0 {
     // H matrix is now only the scalar h[1][1]
     // C vector is now only the scalar c[1]
@@ -977,12 +977,12 @@ impl RestorationState {
     let stripe_uv_decimate = if xdec>0 && ydec>0 {1} else {0};
 
     //Largest possible restoration unit size (256) for both luma and chroma
-    let lrf_y_shift = 0;
-    let lrf_uv_shift = 0;
+    //let lrf_y_shift = 0;
+    //let lrf_uv_shift = 0;
 
     // Smallest possible LRF size (the size of the superblock and no smaller)
-    //let lrf_y_shift = if fi.sequence.use_128x128_superblock {1} else {2};
-    //let lrf_uv_shift = lrf_y_shift + stripe_uv_decimate;
+    let lrf_y_shift = if fi.sequence.use_128x128_superblock {1} else {2};
+    let lrf_uv_shift = lrf_y_shift + stripe_uv_decimate;
 
     // derive the rest
     let y_unit_log2 = RESTORATION_TILESIZE_MAX_LOG2 - lrf_y_shift;
