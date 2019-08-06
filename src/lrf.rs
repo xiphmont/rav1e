@@ -977,12 +977,12 @@ impl RestorationState {
     let stripe_uv_decimate = if xdec>0 && ydec>0 {1} else {0};
 
     //Largest possible restoration unit size (256) for both luma and chroma
-    //let lrf_y_shift = 0;
-    //let lrf_uv_shift = 0;
+    let lrf_y_shift = 0;
+    let lrf_uv_shift = 0;
 
     // Smallest possible LRF size (the size of the superblock and no smaller)
-    let lrf_y_shift = if fi.sequence.use_128x128_superblock {1} else {2};
-    let lrf_uv_shift = lrf_y_shift + stripe_uv_decimate;
+    //let lrf_y_shift = if fi.sequence.use_128x128_superblock {1} else {2};
+    //let lrf_uv_shift = lrf_y_shift + stripe_uv_decimate;
 
     // derive the rest
     let y_unit_log2 = RESTORATION_TILESIZE_MAX_LOG2 - lrf_y_shift;
