@@ -212,7 +212,7 @@ pub fn cdef_analyze_superblock_range<T: Pixel>(
   ret
 }
 
-  // For convenience of use alongside cdef_filter_superblock, we assume
+// For convenience of use alongside cdef_filter_superblock, we assume
 // in_frame is padded.  Blocks are not scanned outside the block
 // boundaries (padding is untouched here).
 
@@ -263,15 +263,15 @@ pub fn cdef_sb_frame<T: Pixel>(fi: &FrameInvariants<T>, sb_wh: usize, tile: &Til
     planes: [
       {
         let &PlaneConfig { xdec, ydec, .. } = tile.planes[0].plane_cfg;
-        Plane::new(sb_size >> xdec, sb_size >> ydec, xdec, ydec, 3, 3)
+        Plane::new(sb_size >> xdec, sb_size >> ydec, xdec, ydec, 0, 0)
       },
       {
         let &PlaneConfig { xdec, ydec, .. } = tile.planes[1].plane_cfg;
-        Plane::new(sb_size >> xdec, sb_size >> ydec, xdec, ydec, 3, 3)
+        Plane::new(sb_size >> xdec, sb_size >> ydec, xdec, ydec, 0, 0)
       },
       {
         let &PlaneConfig { xdec, ydec, .. } = tile.planes[2].plane_cfg;
-        Plane::new(sb_size >> xdec, sb_size >> ydec, xdec, ydec, 3, 3)
+        Plane::new(sb_size >> xdec, sb_size >> ydec, xdec, ydec, 0, 0)
       },
     ]
   }
@@ -290,7 +290,7 @@ pub fn cdef_sb_padded_frame_copy<T: Pixel>(
         Plane::new(
           (sb_size >> xdec) + pad * 2,
           (sb_size >> ydec) + pad * 2,
-          xdec, ydec, 3, 3
+          xdec, ydec, 0, 0
         )
       },
       {
@@ -298,7 +298,7 @@ pub fn cdef_sb_padded_frame_copy<T: Pixel>(
         Plane::new(
           (sb_size >> xdec) + pad * 2,
           (sb_size >> ydec) + pad * 2,
-          xdec, ydec, 3, 3
+          xdec, ydec, 0, 0
         )
       },
       {
@@ -306,7 +306,7 @@ pub fn cdef_sb_padded_frame_copy<T: Pixel>(
         Plane::new(
           (sb_size >> xdec) + pad * 2,
           (sb_size >> ydec) + pad * 2,
-          xdec, ydec, 3, 3
+          xdec, ydec, 0, 0
         )
       },
     ]

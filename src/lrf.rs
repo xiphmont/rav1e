@@ -58,6 +58,7 @@ pub const SGRPROJ_PARAMS_S: [[u32; 2]; 1 << SGRPROJ_PARAMS_BITS] = [
 
 #[allow(unused)] // Wiener coming soon!
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+
 pub enum RestorationFilter {
   None,
   Wiener  { coeffs: [[i8; 3]; 2] },
@@ -588,6 +589,14 @@ pub fn sgrproj_stripe_filter<T: Pixel>(set: u8, xqd: [i8; 2], fi: &FrameInvarian
   }
 }
 
+fn srd(dividend: i64, divisor:i64) -> i32 {
+  if dividend < 0 {
+    ((dividend - divisor / 2) / divisor) as i32
+  } else {
+    ((dividend + divisor / 2) / divisor) as i32
+  }
+}
+
 // Frame inputs below aren't all equal, and will change as work
 // continues.  There's no deblocked reconstruction available at this
 // point of RDO, so we use the non-deblocked reconstruction, cdef and
@@ -602,11 +611,13 @@ pub fn sgrproj_stripe_filter<T: Pixel>(set: u8, xqd: [i8; 2], fi: &FrameInvarian
 
 // Input params follow the same rules as sgrproj_stripe_filter.
 // Inputs are relative to the colocated slice views.
-pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
+pub fn sgrproj_solve<T: Pixel>(set: u8, bdm8: usize,
                                input: &PlaneSlice<T>,
                                cdeffed: &PlaneSlice<T>,
-                               cdef_w: usize, cdef_h: usize) -> (i8, i8) {
-  const MAX: usize = 1 << RESTORATION_TILESIZE_MAX_LOG2;
+                               clip_w: usize, clip_h: usize,
+                               process_w: usize, process_h: usize,
+) -> (i8, i8) {
+  const MAX: usize = (1 << RESTORATION_TILESIZE_MAX_LOG2) + (1 << RESTORATION_TILESIZE_MAX_LOG2 - 1);
   const INTEGRAL_IMAGE_STRIDE: usize = MAX + 6 + 2;
   let mut integral_image: [u32;
     INTEGRAL_IMAGE_STRIDE * INTEGRAL_IMAGE_STRIDE] =
@@ -614,8 +625,6 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
   let mut sq_integral_image: [u32;
     INTEGRAL_IMAGE_STRIDE * INTEGRAL_IMAGE_STRIDE] =
     [0; INTEGRAL_IMAGE_STRIDE * INTEGRAL_IMAGE_STRIDE];
-
-  let bdm8 = fi.sequence.bit_depth - 8;
 
   let mut a_r2: [[u32; MAX+2]; 2] = [[0; MAX+2]; 2];
   let mut b_r2: [[u32; MAX+2]; 2] = [[0; MAX+2]; 2];
@@ -628,25 +637,25 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
   let s_r2: u32 = SGRPROJ_PARAMS_S[set as usize][0];
   let s_r1: u32 = SGRPROJ_PARAMS_S[set as usize][1];
 
-  let mut h:[[f64; 2]; 2] = [[0.,0.],[0.,0.]];
-  let mut c:[f64; 2] = [0., 0.];
+  let mut h:[[i64; 2]; 2] = [[0,0],[0,0]];
+  let mut c:[i64; 2] = [0, 0];
 
   let max_r = if s_r2 > 0 { 2 } else if s_r1 > 0 { 1 } else { 0 };
   {
     let mut rows_iter = VertPaddedIter::new(
       cdeffed,
       cdeffed,
-      // since r2 uses every other row, we need an extra row if cdef_h is odd
-      cdef_h + if s_r2 > 0 { cdef_h & 1 } else { 0 },
-      cdef_h,
+      // since r2 uses every other row, we need an extra row if process_h is odd
+      process_h + if s_r2 > 0 { process_h & 1 } else { 0 },
+      clip_h,
       max_r)
     .map(|row: &[T]| {
       let left_w = max_r + 2;
       let right_w = max_r + 1;
       HorzPaddedIter::new(
-        &row[..cdef_w],
+        &row[..clip_w],
         -(left_w as isize),
-        left_w + cdef_w + right_w
+        left_w + process_w + right_w
       )
     });
     setup_integral_image(
@@ -666,7 +675,7 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
     sgrproj_box_ab_r2(&mut a_r2[0], &mut b_r2[0],
                       &integral_image, &sq_integral_image,
                       INTEGRAL_IMAGE_STRIDE,
-                      0, cdef_w, s_r2, bdm8);
+                      0, process_w, s_r2, bdm8);
   }
   if s_r1 > 0 {
     let r_diff = max_r - 1;
@@ -675,98 +684,99 @@ pub fn sgrproj_solve<T: Pixel>(set: u8, fi: &FrameInvariants<T>,
                       &integral_image[integral_image_offset..],
                       &sq_integral_image[integral_image_offset..],
                       INTEGRAL_IMAGE_STRIDE,
-                      0, cdef_w, s_r1, bdm8);
+                      0, process_w, s_r1, bdm8);
     sgrproj_box_ab_r1(&mut a_r1[1], &mut b_r1[1],
                       &integral_image[integral_image_offset..],
                       &sq_integral_image[integral_image_offset..],
                       INTEGRAL_IMAGE_STRIDE,
-                      1, cdef_w, s_r1, bdm8);
+                      1, process_w, s_r1, bdm8);
   }
 
   /* iterate by row */
   // Increment by two to handle the use of even rows by r=2 and run a nested
   //  loop to handle increments of one.
-  for y in (0..cdef_h).step_by(2) {
+  for y in (0..process_h).step_by(2) {
     // get results to use y and y+1
     let f_r2_01: [&[u32]; 2] = if s_r2 > 0 {
       sgrproj_box_ab_r2(&mut a_r2[(y / 2 + 1) % 2], &mut b_r2[(y / 2 + 1) % 2],
                         &integral_image, &sq_integral_image,
                         INTEGRAL_IMAGE_STRIDE,
-                        y + 2, cdef_w, s_r2, bdm8);
+                        y + 2, process_w, s_r2, bdm8);
       let ap0: [&[u32]; 2] = [&a_r2[(y / 2) % 2], &a_r2[(y / 2 + 1) % 2]];
       let bp0: [&[u32]; 2] = [&b_r2[(y / 2) % 2], &b_r2[(y / 2 + 1) % 2]];
-      sgrproj_box_f_r2(&ap0, &bp0, &mut f_r2_0, &mut f_r2_1, y, cdef_w, &cdeffed);
+      sgrproj_box_f_r2(&ap0, &bp0, &mut f_r2_0, &mut f_r2_1, y, process_w, &cdeffed);
       [&f_r2_0, &f_r2_1]
     } else {
-      sgrproj_box_f_r0(&mut f_r2_0, y, cdef_w, &cdeffed);
+      sgrproj_box_f_r0(&mut f_r2_0, y, process_w, &cdeffed);
       // share results for both rows
       [&f_r2_0, &f_r2_0]
     };
-    for dy in 0..(2.min(cdef_h - y)) {
-      let y = y + dy;
+    for dy in 0..(2.min(process_h - y)) {
+      let ly = y + dy;
       if s_r1 > 0 {
         let r_diff = max_r - 1;
         let integral_image_offset = r_diff + r_diff * INTEGRAL_IMAGE_STRIDE;
-        sgrproj_box_ab_r1(&mut a_r1[(y + 2) % 3], &mut b_r1[(y + 2) % 3],
+        sgrproj_box_ab_r1(&mut a_r1[(ly + 2) % 3], &mut b_r1[(ly + 2) % 3],
                           &integral_image[integral_image_offset..],
                           &sq_integral_image[integral_image_offset..],
                           INTEGRAL_IMAGE_STRIDE,
-                          y + 2, cdef_w, s_r1, bdm8);
-        let ap1: [&[u32]; 3] = [&a_r1[y % 3], &a_r1[(y + 1) % 3], &a_r1[(y + 2) % 3]];
-        let bp1: [&[u32]; 3] = [&b_r1[y % 3], &b_r1[(y + 1) % 3], &b_r1[(y + 2) % 3]];
-        sgrproj_box_f_r1(&ap1, &bp1, &mut f_r1, y, cdef_w, &cdeffed);
+                          ly + 2, process_w, s_r1, bdm8);
+        let ap1: [&[u32]; 3] = [&a_r1[ly % 3], &a_r1[(ly + 1) % 3], &a_r1[(ly + 2) % 3]];
+        let bp1: [&[u32]; 3] = [&b_r1[ly % 3], &b_r1[(ly + 1) % 3], &b_r1[(ly + 2) % 3]];
+        sgrproj_box_f_r1(&ap1, &bp1, &mut f_r1, ly, process_w, &cdeffed);
       } else {
-        sgrproj_box_f_r0(&mut f_r1, y, cdef_w, &cdeffed);
+        sgrproj_box_f_r0(&mut f_r1, ly, process_w, &cdeffed);
       }
 
-      for x in 0..cdef_w {
-        let u = i32::cast_from(cdeffed.p(x, y)) << SGRPROJ_RST_BITS;
-        let s = (i32::cast_from(input.p(x,y)) << SGRPROJ_RST_BITS) - u;
+      for x in 0..process_w {
+        let u = i32::cast_from(cdeffed.p(x, ly)) << SGRPROJ_RST_BITS;
+        let s = (i32::cast_from(input.p(x,ly)) << SGRPROJ_RST_BITS) - u;
         let f2 = f_r2_01[dy][x] as i32 - u;
         let f1 = f_r1[x] as i32 - u;
-        h[0][0] += f2 as f64 * f2 as f64;
-        h[1][1] += f1 as f64 * f1 as f64;
-        h[0][1] += f1 as f64 * f2 as f64;
-        c[0] += f2 as f64 * s as f64;
-        c[1] += f1 as f64 * s as f64;
+        h[0][0] += f2 as i64 * f2 as i64;
+        h[1][1] += f1 as i64 * f1 as i64;
+        h[0][1] += f1 as i64 * f2 as i64;
+        c[0] += f2 as i64 * s as i64;
+        c[1] += f1 as i64 * s as i64;
       }
     }
   }
 
   // this is lifted almost in-tact from libaom
-  let n = cdef_w as f64 * cdef_h as f64;
+  let n = process_w as i64 * process_h as i64;
   h[0][0] /= n;
   h[0][1] /= n;
   h[1][1] /= n;
   h[1][0] = h[0][1];
-  c[0] = c[0] * (1 << SGRPROJ_PRJ_BITS) as f64 / n;
-  c[1] = c[1] * (1 << SGRPROJ_PRJ_BITS) as f64 / n;
+  c[0] /= n;
+  c[1] /= n;
+  c[0] *= 1 << SGRPROJ_PRJ_BITS;
+  c[1] *= 1 << SGRPROJ_PRJ_BITS;
   let (xq0, xq1) = if s_r2 == 0 {
     // H matrix is now only the scalar h[1][1]
     // C vector is now only the scalar c[1]
-    if h[1][1] == 0. {
+    if h[1][1] == 0 {
       (0, 0)
     } else {
-      (0, (c[1] / h[1][1]).round() as i32)
+      (0, srd(c[1], h[1][1]))
     }
   } else if s_r1 == 0 {
     // H matrix is now only the scalar h[0][0]
     // C vector is now only the scalar c[0]
-    if h[0][0] == 0. {
+    if h[0][0] == 0 {
       (0, 0)
     } else {
-      ((c[0] / h[0][0]).round() as i32, 0)
+      (srd(c[0], h[0][0]), 0)
     }
   } else {
     let det = h[0][0] * h[1][1] - h[0][1] * h[1][0];
-    if det == 0. {
+    if det == 0 {
       (0, 0)
     } else {
       // If scaling up dividend would overflow, instead scale down the divisor
       let div1 = h[1][1] * c[0] - h[0][1] * c[1];
       let div2 = h[0][0] * c[1] - h[1][0] * c[0];
-
-      ((div1 / det).round() as i32, (div2 / det).round() as i32)
+      (srd(div1, det), srd(div2, det))
     }
   };
   let xqd0 = clamp(xq0, SGRPROJ_XQD_MIN[0] as i32, SGRPROJ_XQD_MAX[0] as i32);

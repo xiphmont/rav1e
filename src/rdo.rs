@@ -1280,6 +1280,7 @@ fn rdo_loop_plane_error<T: Pixel>(sbo: SuperBlockOffset, tile_sbo: SuperBlockOff
 pub fn rdo_loop_decision<T: Pixel>(tile_sbo: SuperBlockOffset, fi: &FrameInvariants<T>,
                                    ts: &mut TileStateMut<'_, T>,
                                    cw: &mut ContextWriter, w: &mut dyn Writer) {
+
   assert!(fi.sequence.enable_cdef || fi.sequence.enable_restoration);
   // Determine area of optimization: Which plane has the largest LRUs?
   // How many LRUs for each?
@@ -1295,9 +1296,6 @@ pub fn rdo_loop_decision<T: Pixel>(tile_sbo: SuperBlockOffset, fi: &FrameInvaria
     let wh = 1<<sb_shift;
     lru_wh[pli] = sb_wh / wh;
   }
-
-  // Construct a largest-LRU-sized padded frame to filter from,
-  // and a largest-LRU-sized padded frame to test-filter into
   let mut best_index = vec![vec![-1; sb_wh]; sb_wh];
   let mut best_lrf: Vec<Vec<Vec<RestorationFilter>>> = Vec::new();
   let sbo_0 = SuperBlockOffset { x: 0, y: 0 };
@@ -1311,6 +1309,9 @@ pub fn rdo_loop_decision<T: Pixel>(tile_sbo: SuperBlockOffset, fi: &FrameInvaria
       }
     }
   }
+
+  // Construct a largest-LRU-sized padded frame to filter from,
+  // and a largest-LRU-sized padded frame to test-filter into
   
   // all stages; reconstruction goes to cdef so it must be additionally padded
   // TODO: use the new plane padding mechanism rather than this old kludge.  Will require
@@ -1499,7 +1500,9 @@ pub fn rdo_loop_decision<T: Pixel>(tile_sbo: SuperBlockOffset, fi: &FrameInvaria
                   let unit_width = unit_size.min(ref_plane.cfg.width - loop_tile_po.x as usize);
                   let unit_height = unit_size.min(ref_plane.cfg.height - loop_tile_po.y as usize);
                   let (xqd0, xqd1) =
-                    sgrproj_solve(set, fi, &ref_plane.slice(loop_tile_po), &lrf_in_plane.slice(loop_po),
+                    sgrproj_solve(set, fi.sequence.bit_depth-8,
+                                  &ref_plane.slice(loop_tile_po), &lrf_in_plane.slice(loop_po),
+                                  unit_width, unit_height,
                                   unit_width, unit_height);
                   
                   let current_lrf = RestorationFilter::Sgrproj{set, xqd: [xqd0, xqd1]};
