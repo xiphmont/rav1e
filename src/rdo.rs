@@ -1241,6 +1241,9 @@ fn rdo_loop_plane_error<T: Pixel>(sbo: SuperBlockOffset, tile_sbo: SuperBlockOff
                                   ts: &TileStateMut<'_, T>, blocks: &TileBlocks<'_>,
                                   test: &Frame<T>, pli: usize) -> u64 {
   let sb_blocks = if fi.sequence.use_128x128_superblock {16} else {8} * sb_wh;
+  let in_plane = &ts.input_tile.planes[pli];
+  let test_plane = &test.planes[pli];
+  let &PlaneConfig { xdec, ydec, .. } = in_plane.plane_cfg;
   // Each direction block is 8x8 in y, potentially smaller if subsampled in chroma
   // accumulating in-frame and unpadded
   let mut err:u64 = 0;
@@ -1248,11 +1251,8 @@ fn rdo_loop_plane_error<T: Pixel>(sbo: SuperBlockOffset, tile_sbo: SuperBlockOff
     for bx in 0..sb_blocks {
       let in_bo = tile_sbo.block_offset(bx<<1, by<<1);
       if in_bo.x < blocks.cols() && in_bo.y < blocks.rows() {
-        let skip = blocks[in_bo].skip;
-        if !skip {
-          let in_plane = &ts.input_tile.planes[pli];
-          let test_plane = &test.planes[pli];
-          let &PlaneConfig { xdec, ydec, .. } = in_plane.plane_cfg;
+        //let skip = blocks[in_bo].skip;
+        //if !skip {
           debug_assert_eq!(xdec, test_plane.cfg.xdec);
           debug_assert_eq!(ydec, test_plane.cfg.ydec);
 
@@ -1261,12 +1261,12 @@ fn rdo_loop_plane_error<T: Pixel>(sbo: SuperBlockOffset, tile_sbo: SuperBlockOff
           let test_bo = sbo.block_offset(bx << 1, by << 1);
           let test_region = test_plane.region(Area::BlockStartingAt { bo: test_bo });
 
-          //if pli==0 {
+          if pli==0 {
             err += cdef_dist_wxh_8x8(&in_region, &test_region, fi.sequence.bit_depth);
-          //} else {
-            //err += sse_wxh(&in_region, &test_region, 8 >> xdec, 8 >> ydec);
-          //}
-        }
+          } else {
+            err += sse_wxh(&in_region, &test_region, 8 >> xdec, 8 >> ydec);
+          }
+        //}
       }
     }
   }
