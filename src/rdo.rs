@@ -1261,8 +1261,12 @@ fn rdo_loop_plane_error<T: Pixel>(sbo: SuperBlockOffset, tile_sbo: SuperBlockOff
           let test_bo = sbo.block_offset(bx << 1, by << 1);
           let test_region = test_plane.region(Area::BlockStartingAt { bo: test_bo });
 
-            err += sse_wxh(&in_region, &test_region, 8 >> xdec, 8 >> ydec);
-         }
+          //if pli==0 {
+            err += cdef_dist_wxh_8x8(&in_region, &test_region, fi.sequence.bit_depth);
+          //} else {
+            //err += sse_wxh(&in_region, &test_region, 8 >> xdec, 8 >> ydec);
+          //}
+        }
       }
     }
   }
