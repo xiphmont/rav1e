@@ -388,21 +388,20 @@ pub fn cdef_filter_superblock<T: Pixel>(
           & blocks[sbo_global.block_offset(2*bx+1, 2*by)].skip
           & blocks[sbo_global.block_offset(2*bx, 2*by+1)].skip
           & blocks[sbo_global.block_offset(2*bx+1, 2*by+1)].skip;
-        if !skip {
-          let dir = cdef_dirs.dir[bx][by];
-          let var = cdef_dirs.var[bx][by];
-          for p in 0..3 {
-            let out_plane = &mut out_frame.planes[p];
-            let out_po = sbo.plane_offset(&out_plane.cfg);
-            let in_plane = &in_frame.planes[p];
-            let in_po = sbo.plane_offset(&in_plane.cfg);
-            let xdec = in_plane.cfg.xdec;
-            let ydec = in_plane.cfg.ydec;
-
-            let in_stride = in_plane.cfg.stride;
-            let in_slice = &in_plane.slice(in_po);
-            let out_stride = out_plane.cfg.stride;
-            let out_slice = &mut out_plane.mut_slice(out_po);
+        let dir = cdef_dirs.dir[bx][by];
+        let var = cdef_dirs.var[bx][by];
+        for p in 0..3 {
+          let out_plane = &mut out_frame.planes[p];
+          let out_po = sbo.plane_offset(&out_plane.cfg);
+          let in_plane = &in_frame.planes[p];
+          let in_po = sbo.plane_offset(&in_plane.cfg);
+          let xdec = in_plane.cfg.xdec;
+          let ydec = in_plane.cfg.ydec;
+          let in_stride = in_plane.cfg.stride;
+          let in_slice = &in_plane.slice(in_po);
+          let out_stride = out_plane.cfg.stride;
+          let out_slice = &mut out_plane.mut_slice(out_po);
+          if !skip {
 
             let local_pri_strength;
             let local_sec_strength;
@@ -432,6 +431,17 @@ pub fn cdef_filter_superblock<T: Pixel>(
                                 local_pri_strength, local_sec_strength, local_dir,
                                 local_damping, xsize as isize, ysize as isize,
                                 coeff_shift as i32);
+            }
+          } else {
+            // we need to copy input to output
+            let xsize = 8 >> xdec;
+            let ysize = 8 >> ydec;
+            let in_block = in_slice.subslice(((8 * bx) >> xdec) + 2, ((8 * by) >> ydec) + 2);
+            let mut out_block = out_slice.subslice((8 * bx) >> xdec, (8 * by) >> ydec);
+            for i in 0..ysize {
+              for j in 0..xsize {
+                out_block[i][j] = T::cast_from(in_block[i][j]);
+              }
             }
           }
         }

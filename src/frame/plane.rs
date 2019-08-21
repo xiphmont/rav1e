@@ -306,7 +306,6 @@ impl<T: Pixel> Plane<T> {
     PlaneMutSlice { plane: self, x: po.x, y: po.y }
   }
 
-  #[cfg(test)]
   pub(crate) fn as_slice(&self) -> PlaneSlice<'_, T> {
     self.slice(PlaneOffset { x: 0, y: 0 })
   }
@@ -616,6 +615,14 @@ impl<'a, T: Pixel> PlaneMutSlice<'a, T> {
       x: self.x,
       y: self.y,
       phantom: PhantomData,
+    }
+  }
+
+  pub fn subslice(&mut self, xo: usize, yo: usize) -> PlaneMutSlice<'_, T> {
+    PlaneMutSlice {
+      plane: self.plane,
+      x: self.x + xo as isize,
+      y: self.y + yo as isize
     }
   }
 }
