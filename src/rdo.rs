@@ -1438,7 +1438,7 @@ pub fn rdo_loop_decision<T: Pixel>(tile_sbo: SuperBlockOffset, fi: &FrameInvaria
                 }
               }
             }
-            let cost = compute_rd_cost(fi, rate, err);
+            let cost = compute_rd_cost(fi, 0, err);
             if best_cost < 0. || cost < best_cost {
               best_cost = cost;
               best_new_index = cdef_index as i8;
@@ -1494,7 +1494,7 @@ pub fn rdo_loop_decision<T: Pixel>(tile_sbo: SuperBlockOffset, fi: &FrameInvaria
                 let err = rdo_loop_plane_error(loop_sbo, loop_tile_sbo, wh, fi, ts,
                                                &cw.bc.blocks.as_const(), &lrf_input, pli);
                 let rate = cw.count_lrf_switchable(w, &ts.restoration.as_const(), best_new_lrf, pli);
-                let mut best_cost = compute_rd_cost(fi, rate, err);
+                let mut best_cost = compute_rd_cost(fi, 0, err);
                 for set in 0..16 {
                   // clip to encoded area
                   let unit_width = unit_size.min(ref_plane.cfg.width - loop_tile_po.x as usize);
@@ -1522,7 +1522,7 @@ pub fn rdo_loop_decision<T: Pixel>(tile_sbo: SuperBlockOffset, fi: &FrameInvaria
                   let err = rdo_loop_plane_error(loop_sbo, loop_tile_sbo, wh, fi, ts,
                                                  &cw.bc.blocks.as_const(), &lrf_output, pli);
                   let rate = cw.count_lrf_switchable(w, &ts.restoration.as_const(), current_lrf, pli);
-                  let cost = compute_rd_cost(fi, rate, err);
+                  let cost = compute_rd_cost(fi, 0, err);
                   if cost<best_cost {
                     best_cost = cost;
                     best_new_lrf = current_lrf;
