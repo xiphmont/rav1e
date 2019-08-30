@@ -1251,7 +1251,7 @@ impl RestorationState {
 
     let (lrf_y_shift, lrf_uv_shift) = if fi.sequence.enable_large_lru {
       // Largest possible restoration unit size (256) for both luma and chroma
-      (0, 1)
+      (1, 1)
     } else {
       // Smallest possible LRF size (the size of the superblock and no smaller)
       let lrf_y_shift = if fi.sequence.use_128x128_superblock { 1 } else { 2 };
