@@ -1988,6 +1988,7 @@ pub fn rdo_loop_decision<T: Pixel>(
                 pli,
               );
               let mut best_cost = compute_rd_cost(fi, rate, err);
+              // clip to encoded area
               let unit_width =
                 unit_size.min(ref_plane.cfg.width - loop_tile_po.x as usize);
               let unit_height =
@@ -2004,53 +2005,51 @@ pub fn rdo_loop_decision<T: Pixel>(
               );
 
               for set in 0..16 {
-                // clip to encoded area
-                let (xqd0, xqd1) = sgrproj_solve(
-                  set,
-                  fi,
-                  &mut ts.integral_buffer,
-                  &ref_plane.slice(loop_tile_po),
-                  &lrf_in_plane.slice(loop_po),
-                  unit_width,
-                  unit_height,
-                );
-                let current_lrf =
-                  RestorationFilter::Sgrproj { set, xqd: [xqd0, xqd1] };
-                if let RestorationFilter::Sgrproj { set, xqd } = current_lrf {
-                  sgrproj_stripe_filter(
-                    set,
-                    xqd,
-                    fi,
-                    &mut ts.integral_buffer,
-                    SOLVE_IMAGE_STRIDE,
-                    unit_width,
-                    unit_height,
-                    &lrf_input.planes[pli].slice(loop_po),
-                    &mut lrf_output.planes[pli].mut_slice(loop_po),
-                  );
-                }
-                let err = rdo_loop_plane_error(
-                  loop_sbo,
-                  loop_tile_sbo,
-                  lru_sb_w,
-                  lru_sb_h,
-                  fi,
-                  ts,
-                  &cw.bc.blocks.as_const(),
-                  &lrf_output,
-                  pli,
-                );
-                let rate = cw.count_lrf_switchable(
-                  w,
-                  &ts.restoration.as_const(),
-                  current_lrf,
-                  pli,
-                );
-                let cost = compute_rd_cost(fi, rate, err);
+                for xqd0 in -96..32 {
+                  if set < 10 || set >= 14 || xqd0 == 0 {
+                    for xqd1 in -32..96 {
+                      if set < 14 || xqd1 == 95 {
+                        let current_lrf =
+                          RestorationFilter::Sgrproj { set, xqd: [xqd0, xqd1] };
+                        if let RestorationFilter::Sgrproj { set, xqd } = current_lrf {
+                          sgrproj_stripe_filter(
+                            set,
+                            xqd,
+                            fi,
+                            &mut ts.integral_buffer,
+                            SOLVE_IMAGE_STRIDE,
+                            unit_width,
+                            unit_height,
+                            &lrf_input.planes[pli].slice(loop_po),
+                            &mut lrf_output.planes[pli].mut_slice(loop_po),
+                          );
+                        }
+                        let err = rdo_loop_plane_error(
+                          loop_sbo,
+                          loop_tile_sbo,
+                          lru_sb_w,
+                          lru_sb_h,
+                          fi,
+                          ts,
+                          &cw.bc.blocks.as_const(),
+                          &lrf_output,
+                          pli,
+                        );
+                        let rate = cw.count_lrf_switchable(
+                          w,
+                          &ts.restoration.as_const(),
+                          current_lrf,
+                          pli,
+                        );
+                        let cost = compute_rd_cost(fi, rate, err);
 
-                if cost < best_cost {
-                  best_cost = cost;
-                  best_new_lrf = current_lrf;
+                        if cost < best_cost {
+                          best_cost = cost;
+                          best_new_lrf = current_lrf;
+                        }
+                      }
+                    }
+                  }
                 }
               }
 
