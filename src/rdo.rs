@@ -1650,20 +1650,21 @@ fn rdo_loop_plane_error<T: Pixel>(
         let test_region =
           test_plane.region(Area::BlockStartingAt { bo: test_bo.0 });
 
-        let value = if pli == 0 {
-          cdef_dist_wxh_8x8(&in_region, &test_region, fi.sequence.bit_depth)
-        } else {
-          // The closure returns 1. because we bias the distortion right
-          // below.
-          sse_wxh(&in_region, &test_region, 8 >> xdec, 8 >> ydec, |_, _| 1.)
-        };
-
-        let bias = compute_distortion_bias(
-          fi,
-          ts.to_frame_block_offset(bo),
-          BlockSize::BLOCK_8X8,
-        );
-        err += (value as f64 * bias) as u64;
+        //let value = if pli == 0 {
+        //  cdef_dist_wxh_8x8(&in_region, &test_region, fi.sequence.bit_depth)
+        //} else {
+        //  // The closure returns 1. because we bias the distortion right
+        //  // below.
+        //  sse_wxh(&in_region, &test_region, 8 >> xdec, 8 >> ydec, |_, _| 1.)
+        //};
+        //
+        //let bias = compute_distortion_bias(
+        //  fi,
+        //  ts.to_frame_block_offset(bo),
+        //  BlockSize::BLOCK_8X8,
+        //);
+        //err += (value as f64 * bias) as u64;
+        err += sse_wxh(&in_region, &test_region, 8 >> xdec, 8 >> ydec, |_, _| 1.);
       }
     }
   }
