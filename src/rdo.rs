@@ -2025,54 +2025,73 @@ pub fn rdo_loop_decision<T: Pixel>(
                 &lrf_input.planes[pli].slice(loop_po),
               );
 
-              for set in 0..16 {
-                // clip to encoded area
-                let (xqd0, xqd1) = sgrproj_solve(
-                  set,
-                  fi,
-                  &mut ts.integral_buffer,
-                  &ref_plane.slice(loop_tile_po),
-                  &lrf_in_plane.slice(loop_po),
-                  unit_width,
-                  unit_height,
-                );
-                let current_lrf =
-                  RestorationFilter::Sgrproj { set, xqd: [xqd0, xqd1] };
-                if let RestorationFilter::Sgrproj { set, xqd } = current_lrf {
-                  sgrproj_stripe_filter(
+              {
+                let mut coeffcost: [[u32; 128]; 2] =  [[0; 128]; 2];
+                // pre-determine relative coefficient bit costs
+                for i in 0..2 {
+                  let min = SGRPROJ_XQD_MIN[i] as i32;
+                  let max = SGRPROJ_XQD_MAX[i] as i32;
+                  for j in 0..=(max-min) as usize {
+                    coeffcost[i][j] =
+                      w.count_signed_subexp_with_ref(
+                        j as i32 + min,
+                        min,
+                        max + 1,
+                        SGRPROJ_PRJ_SUBEXP_K,
+                        ts.restoration.as_const().planes[pli].sgrproj_ref[i] as i32,
+                      );
+                  }
+                }
+
+                for set in 0..16 {
+                  // clip to encoded area
+                  let (xqd0, xqd1) = sgrproj_solve(
                     set,
-                    xqd,
                     fi,
                     &mut ts.integral_buffer,
-                    SOLVE_IMAGE_STRIDE,
+                    &coeffcost,
+                    &ref_plane.slice(loop_tile_po),
+                    &lrf_in_plane.slice(loop_po),
                     unit_width,
                     unit_height,
-                    &lrf_input.planes[pli].slice(loop_po),
-                    &mut lrf_output.planes[pli].mut_slice(loop_po),
                   );
-                }
-                let err = rdo_loop_plane_error(
-                  loop_sbo,
-                  loop_tile_sbo,
-                  lru_sb_w,
-                  lru_sb_h,
-                  fi,
-                  ts,
-                  &cw.bc.blocks.as_const(),
-                  &lrf_output,
-                  pli,
-                );
-                let rate = cw.count_lrf_switchable(
-                  w,
-                  &ts.restoration.as_const(),
-                  current_lrf,
-                  pli,
-                );
-                let cost = compute_rd_cost(fi, rate, err);
-
-                if cost < best_cost {
-                  best_cost = cost;
-                  best_new_lrf = current_lrf;
+                  let current_lrf =
+                    RestorationFilter::Sgrproj { set, xqd: [xqd0, xqd1] };
+                  if let RestorationFilter::Sgrproj { set, xqd } = current_lrf {
+                    sgrproj_stripe_filter(
+                      set,
+                      xqd,
+                      fi,
+                      &mut ts.integral_buffer,
+                      SOLVE_IMAGE_STRIDE,
+                      unit_width,
+                      unit_height,
+                      &lrf_input.planes[pli].slice(loop_po),
+                      &mut lrf_output.planes[pli].mut_slice(loop_po),
+                    );
+                  }
+                  let err = rdo_loop_plane_error(
+                    loop_sbo,
+                    loop_tile_sbo,
+                    lru_sb_w,
+                    lru_sb_h,
+                    fi,
+                    ts,
+                    &cw.bc.blocks.as_const(),
+                    &lrf_output,
+                    pli,
+                  );
+                  let rate = cw.count_lrf_switchable(
+                    w,
+                    &ts.restoration.as_const(),
+                    current_lrf,
+                    pli,
+                  );
+                  let cost = compute_rd_cost(fi, rate, err);
+                  if cost < best_cost {
+                    best_cost = cost;
+                    best_new_lrf = current_lrf;
+                  }
                 }
               }
 

@@ -729,7 +729,8 @@ pub fn sgrproj_stripe_filter<T: Pixel>(
 // Inputs are relative to the colocated slice views.
 pub fn sgrproj_solve<T: Pixel>(
   set: u8, fi: &FrameInvariants<T>,
-  integral_image_buffer: &mut IntegralImageBuffer, input: &PlaneSlice<T>,
+  integral_image_buffer: &mut IntegralImageBuffer,
+  coeffcost: &[[u32; 128]; 2], input: &PlaneSlice<T>,
   cdeffed: &PlaneSlice<T>, cdef_w: usize, cdef_h: usize,
 ) -> (i8, i8) {
   let bdm8 = fi.sequence.bit_depth - 8;
@@ -751,6 +752,8 @@ pub fn sgrproj_solve<T: Pixel>(
 
   let mut h: [[f64; 2]; 2] = [[0., 0.], [0., 0.]];
   let mut c: [f64; 2] = [0., 0.];
+
+  let mut s2: f64 = 0.;
 
   /* prime the intermediate arrays */
   // One oddness about the radius=2 intermediate array computations that
@@ -855,64 +858,61 @@ pub fn sgrproj_solve<T: Pixel>(
       } else {
         sgrproj_box_f_r0(&mut f_r1, y, cdef_w, &cdeffed);
       }
+      let descale = 1./(1<<SGRPROJ_RST_BITS) as f64;
       for x in 0..cdef_w {
-        let u = i32::cast_from(cdeffed.p(x, y)) << SGRPROJ_RST_BITS;
-        let s = (i32::cast_from(input.p(x, y)) << SGRPROJ_RST_BITS) - u;
-        let f2 = f_r2_01[dy][x] as i32 - u;
-        let f1 = f_r1[x] as i32 - u;
-        h[0][0] += f2 as f64 * f2 as f64;
-        h[1][1] += f1 as f64 * f1 as f64;
-        h[0][1] += f1 as f64 * f2 as f64;
-        c[0] += f2 as f64 * s as f64;
-        c[1] += f1 as f64 * s as f64;
+        let u = i32::cast_from(cdeffed.p(x, y)) as f64;
+        let s = i32::cast_from(input.p(x, y)) as f64 - u;
+        let f2 = f_r2_01[dy][x] as f64 * descale - u;
+        let f1 = f_r1[x] as f64 * descale - u;
+        h[0][0] += f2 * f2;
+        h[1][1] += f1 * f1;
+        h[0][1] += f1 * f2;
+        c[0] += f2 * s;
+        c[1] += f1 * s;
+        s2 += s * s;
       }
     }
   }
 
-  // this is lifted almost in-tact from libaom
-  let n = cdef_w as f64 * cdef_h as f64;
-  h[0][0] /= n;
-  h[0][1] /= n;
-  h[1][1] /= n;
-  h[1][0] = h[0][1];
-  c[0] *= (1 << SGRPROJ_PRJ_BITS) as f64 / n;
-  c[1] *= (1 << SGRPROJ_PRJ_BITS) as f64 / n;
-  let (xq0, xq1) = if s_r2 == 0 {
-    // H matrix is now only the scalar h[1][1]
-    // C vector is now only the scalar c[1]
-    if h[1][1] == 0. {
-      (0, 0)
-    } else {
-      (0, (c[1] / h[1][1]).round() as i32)
-    }
-  } else if s_r1 == 0 {
-    // H matrix is now only the scalar h[0][0]
-    // C vector is now only the scalar c[0]
-    if h[0][0] == 0. {
-      (0, 0)
-    } else {
-      ((c[0] / h[0][0]).round() as i32, 0)
-    }
-  } else {
-    let det = h[0][0] * h[1][1] - h[0][1] * h[1][0];
-    if det == 0. {
-      (0, 0)
-    } else {
-      // If scaling up dividend would overflow, instead scale down the divisor
-      let div1 = h[1][1] * c[0] - h[0][1] * c[1];
-      let div2 = h[0][0] * c[1] - h[1][0] * c[0];
-      ((div1 / det).round() as i32, (div2 / det).round() as i32)
-    }
-  };
   {
-    let xqd0 =
-      clamp(xq0, SGRPROJ_XQD_MIN[0] as i32, SGRPROJ_XQD_MAX[0] as i32);
-    let xqd1 = clamp(
-      (1 << SGRPROJ_PRJ_BITS) - xqd0 - xq1,
-      SGRPROJ_XQD_MIN[1] as i32,
-      SGRPROJ_XQD_MAX[1] as i32,
-    );
-    (xqd0 as i8, xqd1 as i8)
+    let mut bestcost = -1.;
+    let mut bestxqd0 = -1;
+    let mut bestxqd1 = -1;
+    
+    for xqd0 in if s_r2 > 0 { SGRPROJ_XQD_MIN[0] } else { 0 }
+    ..= if s_r2 > 0 { SGRPROJ_XQD_MAX[0] }else{ 0 } {
+      for xqd1 in if s_r1 > 0 { SGRPROJ_XQD_MIN[1] } else { 95 }
+      ..= if s_r1 > 0 { SGRPROJ_XQD_MAX[1] } else { 95 } {
+        
+        let x0 = xqd0 as f64 / (1 << SGRPROJ_PRJ_BITS) as f64;
+        let x1 = 1. - x0 - (xqd1 as f64 / (1 << SGRPROJ_PRJ_BITS) as f64);
+
+        // let v = f2*x0 + f1*x1 + u*(1 - x0 - x1)
+        //       =               + u - ux0 - -ux1
+        //       = x0(f2 - u) + x1(f1 - u) + u
+        // let e = v - s
+        //       = x0(f2 - u) + x1(f1 - u) + (u - s)
+        // or with inverted sign
+        //       = s - v
+        //       = s - u - x0 (f2 - u) - x1(f1 - u)
+        //       = s' - x0f2' - x1f1'
+        //   e*e = s2 - 2x0f2's' - 2x1f1's' + x0x0f2'f2' + 2x0f2'x1f1' + x1x1f1'f1' 
+        //       = s2 - 2x0c0 - 2x1c1 + x0x0h00 + 2x0x1h01 + x1x1h11 
+        //       = s2 + x0x0h00 + x1x1h11 + 2(x0x1h01 - x0c0 - x1c1) 
+      
+        let sse = s2 + x0*x0*h[0][0] + x1*x1*h[1][1] + 2.*(x0*x1*h[0][1] - x0*c[0] - x1*c[1]);
+        let rate = if s_r2 > 0 {coeffcost[0][(xqd0 - SGRPROJ_XQD_MIN[0]) as usize]} else {0} +
+          if s_r1 > 0 {coeffcost[1][(xqd1 - SGRPROJ_XQD_MIN[1]) as usize]} else {0};
+        let cost = crate::rdo::compute_rd_cost(fi, rate, sse as u64);
+        if bestcost < 0. || cost < bestcost {
+          bestcost = cost;
+          bestxqd0 = xqd0;
+          bestxqd1 = xqd1;
+        }
+      }
+    }
+
+    (bestxqd0 as i8, bestxqd1 as i8)
   }
 }
 
