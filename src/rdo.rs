@@ -1775,7 +1775,7 @@ fn rdo_loop_plane_weight<T: Pixel>(
     if fi.sequence.use_128x128_superblock { 16 } else { 8 } * sb_w;
   let sb_h_blocks =
     if fi.sequence.use_128x128_superblock { 16 } else { 8 } * sb_h;
-  let mut weight = vec![1.; sb_h_blocks * sb_w_blocks];
+  let mut weight = vec![0.; sb_h_blocks * sb_w_blocks];
   let mut index = 0;
   // Each direction block is 8x8 in y, potentially smaller if subsampled in chroma
   // accumulating in-frame and unpadded
@@ -2058,7 +2058,7 @@ pub fn rdo_loop_decision<T: Pixel>(
               }
             }
 
-            let cost = compute_rd_cost(fi, rate, err);
+            let cost = compute_rd_cost(fi, rate*3/2, err);
             if best_cost < 0. || cost < best_cost {
               best_cost = cost;
               best_new_index = cdef_index as i8;
@@ -2143,7 +2143,7 @@ pub fn rdo_loop_decision<T: Pixel>(
                   pli,
                 );
 
-                let cost = compute_rd_cost(fi, rate, err);
+                let cost = compute_rd_cost(fi, rate*3/2, err);
                 if best_cost < 0. || cost < best_cost {
                   best_cost = cost;
                   best_lrf_cost[pli][lru_y][lru_x] = cost;
@@ -2221,7 +2221,7 @@ pub fn rdo_loop_decision<T: Pixel>(
                   current_lrf,
                   pli,
                 );
-                let cost = compute_rd_cost(fi, rate, err);
+                let cost = compute_rd_cost(fi, rate*3/2, err);
                 if cost < best_cost {
                   best_cost = cost;
                   best_lrf_cost[pli][lru_y][lru_x] = cost;

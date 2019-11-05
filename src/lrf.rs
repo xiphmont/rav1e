@@ -967,7 +967,7 @@ pub fn sgrproj_solve<T: Pixel>(
   // coefficient set, what's the predicted error?
   //let x0 = xqd0 as f64 / (1 << SGRPROJ_PRJ_BITS) as f64;
   //let x1 = 1. - x0 - (xqd1 as f64 / (1 << SGRPROJ_PRJ_BITS) as f64);
-  //let sse = (s2 + x0*x0*h00 + x1*x1*h11 + 2.*(x0*x1*h01 - x0*c[0] - x1*c[1]));
+  //let sse = (s2 + x0*x0*h00 + x1*x1*h11 + 2.*(x0*x1*h01 - x0*c0 - x1*c1));
 
   (xqd0 as i8, xqd1 as i8)
 
