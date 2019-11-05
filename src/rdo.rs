@@ -253,6 +253,40 @@ fn cdef_dist_wxh_8x8<T: Pixel>(
 }
 
 #[allow(unused)]
+fn cdef_boost_wxh_8x8<T: Pixel>(
+  src1: &PlaneRegion<'_, T>, src2: &PlaneRegion<'_, T>, bit_depth: usize,
+) -> f64 {
+  debug_assert!(src1.plane_cfg.xdec == 0);
+  debug_assert!(src1.plane_cfg.ydec == 0);
+  debug_assert!(src2.plane_cfg.xdec == 0);
+  debug_assert!(src2.plane_cfg.ydec == 0);
+
+  let coeff_shift = bit_depth - 8;
+
+  let mut sum_s: i32 = 0;
+  let mut sum_d: i32 = 0;
+  let mut sum_s2: i64 = 0;
+  let mut sum_d2: i64 = 0;
+  for j in 0..8 {
+    for i in 0..8 {
+      let s: i32 = src1[j][i].as_();
+      let d: i32 = src2[j][i].as_();
+      sum_s += s;
+      sum_d += d;
+      sum_s2 += (s * s) as i64;
+      sum_d2 += (d * d) as i64;
+    }
+  }
+  let svar = (sum_s2 - ((sum_s as i64 * sum_s as i64 + 32) >> 6)) as f64;
+  let dvar = (sum_d2 - ((sum_d as i64 * sum_d as i64 + 32) >> 6)) as f64;
+  //The two constants were tuned for CDEF, but can probably be better tuned for use in general RDO
+  let ssim_boost = (4033_f64 / 16_384_f64)
+    * (svar + dvar + (16_384 << (2 * coeff_shift)) as f64)
+    / f64::sqrt((16_265_089u64 << (4 * coeff_shift)) as f64 + svar * dvar);
+  ssim_boost
+}
+
+#[allow(unused)]
 fn cdef_dist_wxh<T: Pixel, F: Fn(Area, BlockSize) -> f64>(
   src1: &PlaneRegion<'_, T>, src2: &PlaneRegion<'_, T>, w: usize, h: usize,
   bit_depth: usize, compute_bias: F,
@@ -1719,6 +1753,63 @@ fn rdo_loop_plane_error<T: Pixel>(
   err * fi.dist_scale[pli]
 }
 
+pub struct DistortionWeight {
+  pub rows: usize,
+  pub cols: usize,
+  pub xdec: usize,
+  pub ydec: usize,
+  pub weight: Vec<f64>,
+}
+
+fn rdo_loop_plane_weight<T: Pixel>(
+  sbo: TileSuperBlockOffset, tile_sbo: TileSuperBlockOffset, sb_w: usize,
+  sb_h: usize, fi: &FrameInvariants<T>, ts: &TileStateMut<'_, T>,
+  blocks: &TileBlocks<'_>, test: &Frame<T>, pli: usize,
+) -> DistortionWeight {
+  let in_plane = &ts.input_tile.planes[pli];
+  let test_plane = &test.planes[pli];
+  let &PlaneConfig { xdec, ydec, .. } = in_plane.plane_cfg;
+  debug_assert_eq!(xdec, test_plane.cfg.xdec);
+  debug_assert_eq!(ydec, test_plane.cfg.ydec);
+  let sb_w_blocks =
+    if fi.sequence.use_128x128_superblock { 16 } else { 8 } * sb_w;
+  let sb_h_blocks =
+    if fi.sequence.use_128x128_superblock { 16 } else { 8 } * sb_h;
+  let mut weight = vec![1.; sb_h_blocks * sb_w_blocks];
+  let mut index = 0;
+  // Each direction block is 8x8 in y, potentially smaller if subsampled in chroma
+  // accumulating in-frame and unpadded
+  for by in 0..sb_h_blocks {
+    for bx in 0..sb_w_blocks {
+      let bo = tile_sbo.block_offset(bx << 1, by << 1);
+      if bo.0.x < blocks.cols() && bo.0.y < blocks.rows() {
+        let in_bo = tile_sbo.block_offset(bx << 1, by << 1);
+        let in_region =
+          in_plane.subregion(Area::BlockStartingAt { bo: in_bo.0 });
+        let test_bo = sbo.block_offset(bx << 1, by << 1);
+        let test_region =
+          test_plane.region(Area::BlockStartingAt { bo: test_bo.0 });
+        weight[index] = compute_distortion_bias(
+          fi,
+          ts.to_frame_block_offset(bo),
+          BlockSize::BLOCK_8X8,
+        );
+        if pli == 0 {
+          weight[index] *= cdef_boost_wxh_8x8(&in_region, &test_region, fi.sequence.bit_depth);
+        }
+      }
+      index += 1;
+    }
+  }
+  DistortionWeight {
+    rows: sb_h_blocks,
+    cols: sb_w_blocks,
+    xdec: in_plane.plane_cfg.xdec,
+    ydec: in_plane.plane_cfg.ydec,
+    weight: weight,
+  }
+}
+
 // Passed in a superblock offset representing the upper left corner of
 // the LRU area we're optimizing.  This area covers the largest LRU in
 // any of the present planes, but may consist of a number of
@@ -2075,7 +2166,17 @@ pub fn rdo_loop_decision<T: Pixel>(
                 &lrf_input.planes[pli].slice(loop_po),
                 &lrf_input.planes[pli].slice(loop_po),
               );
-
+              let weight = rdo_loop_plane_weight(
+                loop_sbo,
+                loop_tile_sbo,
+                lru_sb_w,
+                lru_sb_h,
+                fi,
+                ts,
+                &cw.bc.blocks.as_const(),
+                &lrf_input,
+                pli,
+              );
               for set in 0..16 {
                 // clip to encoded area
                 let (xqd0, xqd1) = sgrproj_solve(
@@ -2084,6 +2185,7 @@ pub fn rdo_loop_decision<T: Pixel>(
                   &ts.integral_buffer,
                   &ref_plane.slice(loop_tile_po),
                   &lrf_in_plane.slice(loop_po),
+                  &weight,
                   unit_width,
                   unit_height,
                 );
