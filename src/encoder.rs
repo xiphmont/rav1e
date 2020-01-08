@@ -2842,10 +2842,25 @@ fn encode_tile_group<T: Pixel>(
    * frame rather than the frame itself so that deblocking is
    * available inside RDO when needed */
   /* TODO: Don't apply if lossless */
-  deblock_filter_optimize(fi, fs, &blocks);
+  let levels;
+  {
+    let ts = &mut fs.as_tile_state_mut();
+    let rec = &mut ts.rec; 
+    levels = deblock_filter_optimize(
+      fi,
+      &rec.as_const(),
+      &ts.input.as_tile(),
+      &blocks.as_tile_blocks(),
+      fi.width, fi.height, fi.sequence.bit_depth);
+  }
+  fs.deblock.levels = levels;
   if fs.deblock.levels[0] != 0 || fs.deblock.levels[1] != 0 {
-    deblock_filter_frame(&mut fs.as_tile_state_mut(),
-                         &blocks.as_tile_blocks(), fi.width, fi.height, fi.sequence.bit_depth);
+    let ts = &mut fs.as_tile_state_mut();
+    let rec = &mut ts.rec; 
+    deblock_filter_frame(&ts.deblock,
+                         rec,
+                         &blocks.as_tile_blocks(),
+                         fi.width, fi.height, fi.sequence.bit_depth);
   }
 
   // Until the loop filters are pipelined, we'll need to keep
@@ -3208,6 +3223,94 @@ pub struct SBSQueueEntry {
   pub w_post_cdef: WriterBase<WriterRecorder>,
 }
 
+fn check_lf_queue<T: Pixel>(
+  fi: &FrameInvariants<T>,
+  ts: &mut TileStateMut<'_, T>,
+  cw: &mut ContextWriter,
+  w: &mut WriterBase<WriterEncoder>,
+  sbs_q: &mut VecDeque<SBSQueueEntry>,
+  last_lru_ready: &mut [i32; 3],
+  last_lru_rdoed: &mut [i32; 3],
+  last_lru_coded: &mut [i32; 3]
+){
+  let mut check_queue = true;
+
+  // Walk queue from the head, see if anything is ready for RDO and flush
+  while check_queue {
+    if let Some(qe) = sbs_q.front_mut() {
+      for pli in 0..PLANES {
+        if qe.lru_index[pli] > last_lru_ready[pli] {
+          check_queue = false;
+          break;
+        }
+      }
+      if check_queue {
+        // yes, this entry is ready
+        if qe.cdef_coded || fi.sequence.enable_restoration {
+          // only RDO once for a given LRU.
+
+          // One quirk worth noting: LRUs in different planes
+          // may be different sizes; eg, one chroma LRU may
+          // cover four luma LRUs. However, we won't get here
+          // until all are ready for RDO because the smaller
+          // ones all fit inside the biggest, and the biggest
+          // doesn't trigger until everything is done.
+
+          // RDO happens on all LRUs within the confines of the
+          // biggest, all together.  If any of this SB's planes'
+          // LRUs are RDOed, in actuality they all are.
+
+          // SBs tagged with a lru index of -1 are ignored in
+          // LRU coding/rdoing decisions (but still need to rdo
+          // for cdef).
+          let mut already_rdoed = false;
+          for pli in 0..PLANES {
+            if qe.lru_index[pli] != -1
+              && qe.lru_index[pli] <= last_lru_rdoed[pli]
+            {
+              already_rdoed = true;
+              break;
+            }
+          }
+          if !already_rdoed {
+            rdo_loop_decision(qe.sbo, fi, ts, cw, w);
+            for pli in 0..PLANES {
+              if qe.lru_index[pli] != -1
+                && last_lru_rdoed[pli] < qe.lru_index[pli]
+              {
+                last_lru_rdoed[pli] = qe.lru_index[pli];
+              }
+            }
+          }
+        }
+        // write LRF information
+        if fi.sequence.enable_restoration {
+          for pli in 0..PLANES {
+            if qe.lru_index[pli] != -1
+              && last_lru_coded[pli] < qe.lru_index[pli]
+            {
+              last_lru_coded[pli] = qe.lru_index[pli];
+              cw.write_lrf(w, fi, &mut ts.restoration, qe.sbo, pli);
+            }
+          }
+        }
+        // Now that loop restoration is coded, we can replay the initial block bits
+        qe.w_pre_cdef.replay(w);
+        // Now code CDEF into the middle of the block
+        if qe.cdef_coded {
+          let cdef_index = cw.bc.blocks.get_cdef(qe.sbo);
+          cw.write_cdef(w, cdef_index, fi.cdef_bits);
+          // Code queued symbols that come after the CDEF index
+          qe.w_post_cdef.replay(w);
+        }
+        sbs_q.pop_front();
+      }
+    } else {
+      check_queue = false;
+    }
+  }
+}
+
 #[hawktracer(encode_tile)]
 fn encode_tile<'a, T: Pixel>(
   fi: &FrameInvariants<T>, ts: &mut TileStateMut<'_, T>,
@@ -3299,83 +3402,73 @@ fn encode_tile<'a, T: Pixel>(
         }
         sbs_q.push_back(sbs_qe);
 
-        // Walk queue from the head, see if anything is ready for RDO and flush
-        while check_queue {
-          if let Some(qe) = sbs_q.front_mut() {
-            for pli in 0..PLANES {
-              if qe.lru_index[pli] > last_lru_ready[pli] {
-                check_queue = false;
-                break;
-              }
-            }
-            if check_queue {
-              // yes, this entry is ready
-              if qe.cdef_coded || fi.sequence.enable_restoration {
-                // only RDO once for a given LRU.
-
-                // One quirk worth noting: LRUs in different planes
-                // may be different sizes; eg, one chroma LRU may
-                // cover four luma LRUs. However, we won't get here
-                // until all are ready for RDO because the smaller
-                // ones all fit inside the biggest, and the biggest
-                // doesn't trigger until everything is done.
-
-                // RDO happens on all LRUs within the confines of the
-                // biggest, all together.  If any of this SB's planes'
-                // LRUs are RDOed, in actuality they all are.
-
-                // SBs tagged with a lru index of -1 are ignored in
-                // LRU coding/rdoing decisions (but still need to rdo
-                // for cdef).
-                let mut already_rdoed = false;
-                for pli in 0..PLANES {
-                  if qe.lru_index[pli] != -1
-                    && qe.lru_index[pli] <= last_lru_rdoed[pli]
-                  {
-                    already_rdoed = true;
-                    break;
-                  }
-                }
-                if !already_rdoed {
-                  rdo_loop_decision(qe.sbo, fi, ts, &mut cw, &mut w);
-                  for pli in 0..PLANES {
-                    if qe.lru_index[pli] != -1
-                      && last_lru_rdoed[pli] < qe.lru_index[pli]
-                    {
-                      last_lru_rdoed[pli] = qe.lru_index[pli];
-                    }
-                  }
-                }
-              }
-              // write LRF information
-              if fi.sequence.enable_restoration {
-                for pli in 0..PLANES {
-                  if qe.lru_index[pli] != -1
-                    && last_lru_coded[pli] < qe.lru_index[pli]
-                  {
-                    last_lru_coded[pli] = qe.lru_index[pli];
-                    cw.write_lrf(&mut w, fi, &mut ts.restoration, qe.sbo, pli);
-                  }
-                }
-              }
-              // Now that loop restoration is coded, we can replay the initial block bits
-              qe.w_pre_cdef.replay(&mut w);
-              // Now code CDEF into the middle of the block
-              if qe.cdef_coded {
-                let cdef_index = cw.bc.blocks.get_cdef(qe.sbo);
-                cw.write_cdef(&mut w, cdef_index, fi.cdef_bits);
-                // Code queued symbols that come after the CDEF index
-                qe.w_post_cdef.replay(&mut w);
-              }
-              sbs_q.pop_front();
-            }
-          } else {
-            check_queue = false;
-          }
+        if false { //check_queue {
+          check_lf_queue(fi, ts, &mut cw, &mut w, &mut sbs_q,
+                         &mut last_lru_ready,
+                         &mut last_lru_rdoed,
+                         &mut last_lru_coded);
         }
       }
     }
   }
+
+  {
+    // Solve deblocking for just this tile
+    /* TODO: Don't apply if lossless */
+    let deblock_levels = deblock_filter_optimize(
+      fi,
+      &ts.rec.as_const(),
+      &ts.input_tile,
+      &cw.bc.blocks.as_const(),
+      fi.width,
+      fi.height,
+      fi.sequence.bit_depth);
+    if deblock_levels[0] != 0 || deblock_levels[1] != 0 {
+
+      // copy reconstruction to a temp frame to restore it later
+      let rec_copy = Frame {
+        planes: [ts.rec.planes[0].scratch_copy(),
+                 ts.rec.planes[1].scratch_copy(),
+                 ts.rec.planes[2].scratch_copy()],
+      };
+  
+      // copy ts.deblock because we need to set some of our own values here
+      let mut deblock_copy = ts.deblock.clone();
+      deblock_copy.levels = deblock_levels;
+    
+      // temporarily deblock the reference
+      deblock_filter_frame(&mut deblock_copy,
+                           &mut ts.rec,
+                           &cw.bc.blocks.as_const(),
+                           fi.width, fi.height, fi.sequence.bit_depth);
+
+      // rdo lf and write
+      check_lf_queue(fi, ts, &mut cw, &mut w, &mut sbs_q,
+                     &mut last_lru_ready,
+                     &mut last_lru_rdoed,
+                     &mut last_lru_coded);
+      
+      // copy original reference back in
+      for pli in 0..PLANES {
+        let dst = &mut ts.rec.planes[pli];
+        let src = &rec_copy.planes[pli];
+        for (dst_row, src_row) in dst.rows_iter_mut().zip(src.rows_iter()) {
+          for (out, input) in dst_row.iter_mut().zip(src_row) {
+            *out = *input;
+          }
+        }
+      }
+      
+    } else {
+      
+      // rdo lf and write
+      check_lf_queue(fi, ts, &mut cw, &mut w, &mut sbs_q,
+                     &mut last_lru_ready,
+                     &mut last_lru_rdoed,
+                     &mut last_lru_coded);
+    }
+  }
+    
   assert!(
     sbs_q.is_empty(),
     "Superblock queue not empty in tile at offset {}:{}",
