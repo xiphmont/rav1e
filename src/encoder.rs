@@ -3402,7 +3402,7 @@ fn encode_tile<'a, T: Pixel>(
         }
         sbs_q.push_back(sbs_qe);
 
-        if false { //check_queue {
+        if check_queue {
           check_lf_queue(fi, ts, &mut cw, &mut w, &mut sbs_q,
                          &mut last_lru_ready,
                          &mut last_lru_rdoed,
@@ -3412,7 +3412,7 @@ fn encode_tile<'a, T: Pixel>(
     }
   }
 
-  {
+  if false {
     // Solve deblocking for just this tile
     /* TODO: Don't apply if lossless */
     let deblock_levels = deblock_filter_optimize(
