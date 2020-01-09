@@ -3437,10 +3437,10 @@ fn encode_tile<'a, T: Pixel>(
       deblock_copy.levels = deblock_levels;
     
       // temporarily deblock the reference
-      deblock_filter_frame(&mut deblock_copy,
-                           &mut ts.rec,
-                           &cw.bc.blocks.as_const(),
-                           fi.width, fi.height, fi.sequence.bit_depth);
+      //deblock_filter_frame(&mut deblock_copy,
+      //                     &mut ts.rec,
+        //                   &cw.bc.blocks.as_const(),
+          //                 fi.width, fi.height, fi.sequence.bit_depth);
 
       // rdo lf and write
       check_lf_queue(fi, ts, &mut cw, &mut w, &mut sbs_q,
