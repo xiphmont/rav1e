@@ -3434,7 +3434,7 @@ fn encode_tile<'a, T: Pixel>(
   
       // copy ts.deblock because we need to set some of our own values here
       let mut deblock_copy = ts.deblock.clone();
-      deblock_copy.levels = deblock_levels;
+      //deblock_copy.levels = deblock_levels;
     
       // temporarily deblock the reference
       //deblock_filter_frame(&mut deblock_copy,
