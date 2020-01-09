@@ -3402,7 +3402,7 @@ fn encode_tile<'a, T: Pixel>(
         }
         sbs_q.push_back(sbs_qe);
 
-        if check_queue {
+        if false { //check_queue {
           check_lf_queue(fi, ts, &mut cw, &mut w, &mut sbs_q,
                          &mut last_lru_ready,
                          &mut last_lru_rdoed,
@@ -3423,7 +3423,7 @@ fn encode_tile<'a, T: Pixel>(
       fi.width,
       fi.height,
       fi.sequence.bit_depth);
-    if false { //deblock_levels[0] != 0 || deblock_levels[1] != 0 {
+    if deblock_levels[0] != 0 || deblock_levels[1] != 0 {
 
       // copy reconstruction to a temp frame to restore it later
       let rec_copy = Frame {
@@ -3449,6 +3449,7 @@ fn encode_tile<'a, T: Pixel>(
                      &mut last_lru_coded);
       
       // copy original reference back in
+      if false {
       for pli in 0..PLANES {
         let dst = &mut ts.rec.planes[pli];
         let src = &rec_copy.planes[pli];
@@ -3457,6 +3458,7 @@ fn encode_tile<'a, T: Pixel>(
             *out = *input;
           }
         }
+      }
       }
       
     } else {
