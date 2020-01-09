@@ -3412,7 +3412,7 @@ fn encode_tile<'a, T: Pixel>(
     }
   }
 
-  if false {
+  {
     // Solve deblocking for just this tile
     /* TODO: Don't apply if lossless */
     let deblock_levels = deblock_filter_optimize(
@@ -3423,7 +3423,7 @@ fn encode_tile<'a, T: Pixel>(
       fi.width,
       fi.height,
       fi.sequence.bit_depth);
-    if deblock_levels[0] != 0 || deblock_levels[1] != 0 {
+    if false { //deblock_levels[0] != 0 || deblock_levels[1] != 0 {
 
       // copy reconstruction to a temp frame to restore it later
       let rec_copy = Frame {
