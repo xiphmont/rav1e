@@ -1738,7 +1738,7 @@ pub fn rdo_loop_decision<T: Pixel>(
   // How many LRUs for each?
   let mut sb_w = 1; // how many superblocks wide the largest LRU
                     // is/how many SBs we're processing (same thing)
-  let mut sb_h = 1; // how many superblocks wide the largest LRU
+  let mut sb_h = 1; // how many superblocks high the largest LRU
                     // is/how many SBs we're processing (same thing)
   let mut lru_w = [0; PLANES]; // how many LRUs we're processing
   let mut lru_h = [0; PLANES]; // how many LRUs we're processing
@@ -1780,7 +1780,7 @@ pub fn rdo_loop_decision<T: Pixel>(
   let mut lrf_input = cdef_sb_frame(fi, sb_w, sb_h, &const_rec);
   let mut lrf_output = cdef_sb_frame(fi, sb_w, sb_h, &const_rec);
   if fi.sequence.enable_cdef {
-    // min sized temporary frame; sb_wh number of superblocks with padding
+    // min sized temporary frame; sb_w/h number of superblocks with padding
     cdef_input =
       Some(cdef_sb_padded_frame_copy(fi, tile_sbo, sb_w, sb_h, &const_rec, 2));
   }
@@ -1800,6 +1800,14 @@ pub fn rdo_loop_decision<T: Pixel>(
       inp[..width].copy_from_slice(&rec[..width]);
     }
     lrf_input.planes[pli].pad(width, height);
+  }
+
+  if false {
+    println!(">>>RDOing superblock range {}/{} through {}/{} inclusive",
+             tile_sbo.0.x + ts.sbo.0.x,
+             tile_sbo.0.y + ts.sbo.0.y,
+             tile_sbo.0.x + ts.sbo.0.x + sb_w - 1,
+             tile_sbo.0.y + ts.sbo.0.y + sb_h - 1);
   }
 
   // CDEF/LRF decision iteration

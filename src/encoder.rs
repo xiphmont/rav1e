@@ -3400,14 +3400,6 @@ fn encode_tile<'a, T: Pixel>(
             check_queue = true;
           }
         }
-        if false {
-          let tile_w = (fi.sb_width+ts.sb_width-1)/ts.sb_width;
-          let tile_i = ts.sbo.0.y/ts.sb_height*tile_w + ts.sbo.0.x/ts.sb_width;
-          println!("processed superblock [tile {}]: {}/{}, lru={}:{}:{}",
-                 tile_i,
-                   sbx+ts.sbo.0.x,sby+ts.sbo.0.y,
-                   sbs_qe.lru_index[0],sbs_qe.lru_index[1],sbs_qe.lru_index[2]);
-        }
                  
         sbs_q.push_back(sbs_qe);
 
@@ -3424,16 +3416,15 @@ fn encode_tile<'a, T: Pixel>(
   {
     // Solve deblocking for just this tile
     /* TODO: Don't apply if lossless */
-    ////let deblock_levels = deblock_filter_optimize(
-    //  fi,
-    //  &ts.rec.as_const(),
-    //  &ts.input_tile,
-    //  &cw.bc.blocks.as_const(),
-    //  fi.width,
-    //  fi.height,
-    //  fi.sequence.bit_depth);
-    if false {//deblock_levels[0] != 0 || deblock_levels[1] != 0 {
-
+    let deblock_levels = deblock_filter_optimize(
+      fi,
+      &ts.rec.as_const(),
+      &ts.input_tile,
+      &cw.bc.blocks.as_const(),
+      fi.width,
+      fi.height,
+      fi.sequence.bit_depth);
+    if deblock_levels[0] != 0 || deblock_levels[1] != 0 {
       // copy reconstruction to a temp frame to restore it later
       let rec_copy = Frame {
         planes: [ts.rec.planes[0].scratch_copy(),
@@ -3443,7 +3434,7 @@ fn encode_tile<'a, T: Pixel>(
   
       // copy ts.deblock because we need to set some of our own values here
       let mut deblock_copy = ts.deblock.clone();
-      //deblock_copy.levels = deblock_levels;
+      deblock_copy.levels = deblock_levels;
     
       // temporarily deblock the reference
       deblock_filter_frame(&mut deblock_copy,
