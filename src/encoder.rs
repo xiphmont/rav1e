@@ -3411,12 +3411,12 @@ fn encode_tile<'a, T: Pixel>(
                  
         sbs_q.push_back(sbs_qe);
 
-        if check_queue {
-          check_lf_queue(fi, ts, &mut cw, &mut w, &mut sbs_q,
-                         &mut last_lru_ready,
-                         &mut last_lru_rdoed,
-                         &mut last_lru_coded);
-        }
+        //if check_queue {
+          //check_lf_queue(fi, ts, &mut cw, &mut w, &mut sbs_q,
+            //             &mut last_lru_ready,
+              //           &mut last_lru_rdoed,
+                //         &mut last_lru_coded);
+        //}
       }
     }
   }
