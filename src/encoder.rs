@@ -3400,9 +3400,18 @@ fn encode_tile<'a, T: Pixel>(
             check_queue = true;
           }
         }
+        if false {
+          let tile_w = (fi.sb_width+ts.sb_width-1)/ts.sb_width;
+          let tile_i = ts.sbo.0.y/ts.sb_height*tile_w + ts.sbo.0.x/ts.sb_width;
+          println!("processed superblock [tile {}]: {}/{}, lru={}:{}:{}",
+                 tile_i,
+                   sbx+ts.sbo.0.x,sby+ts.sbo.0.y,
+                   sbs_qe.lru_index[0],sbs_qe.lru_index[1],sbs_qe.lru_index[2]);
+        }
+                 
         sbs_q.push_back(sbs_qe);
 
-        if false { //check_queue {
+        if check_queue {
           check_lf_queue(fi, ts, &mut cw, &mut w, &mut sbs_q,
                          &mut last_lru_ready,
                          &mut last_lru_rdoed,
@@ -3415,14 +3424,14 @@ fn encode_tile<'a, T: Pixel>(
   {
     // Solve deblocking for just this tile
     /* TODO: Don't apply if lossless */
-    let deblock_levels = deblock_filter_optimize(
-      fi,
-      &ts.rec.as_const(),
-      &ts.input_tile,
-      &cw.bc.blocks.as_const(),
-      fi.width,
-      fi.height,
-      fi.sequence.bit_depth);
+    ////let deblock_levels = deblock_filter_optimize(
+    //  fi,
+    //  &ts.rec.as_const(),
+    //  &ts.input_tile,
+    //  &cw.bc.blocks.as_const(),
+    //  fi.width,
+    //  fi.height,
+    //  fi.sequence.bit_depth);
     if false {//deblock_levels[0] != 0 || deblock_levels[1] != 0 {
 
       // copy reconstruction to a temp frame to restore it later
@@ -3437,10 +3446,10 @@ fn encode_tile<'a, T: Pixel>(
       //deblock_copy.levels = deblock_levels;
     
       // temporarily deblock the reference
-      //deblock_filter_frame(&mut deblock_copy,
-      //                     &mut ts.rec,
-        //                   &cw.bc.blocks.as_const(),
-          //                 fi.width, fi.height, fi.sequence.bit_depth);
+      deblock_filter_frame(&mut deblock_copy,
+                           &mut ts.rec,
+                           &cw.bc.blocks.as_const(),
+                           fi.width, fi.height, fi.sequence.bit_depth);
 
       // rdo lf and write
       check_lf_queue(fi, ts, &mut cw, &mut w, &mut sbs_q,
@@ -3449,7 +3458,6 @@ fn encode_tile<'a, T: Pixel>(
                      &mut last_lru_coded);
       
       // copy original reference back in
-      if false {
       for pli in 0..PLANES {
         let dst = &mut ts.rec.planes[pli];
         let src = &rec_copy.planes[pli];
@@ -3458,7 +3466,6 @@ fn encode_tile<'a, T: Pixel>(
             *out = *input;
           }
         }
-      }
       }
       
     } else {

@@ -361,15 +361,18 @@ pub fn cdef_sb_padded_frame_copy<T: Pixel>(
   // Copy data into padded frame
   for p in 0..3 {
     let &PlaneConfig { xdec, ydec, .. } = tile.planes[p].plane_cfg;
-    let &Rect { width, height, .. } = tile.planes[p].rect();
-    /*let w = width as isize;
-    let h = height as isize;*/
     let offset = sbo.plane_offset(&tile.planes[p].plane_cfg);
+    let ( width, height ) = {
+      let &Rect { width, height, .. } = tile.planes[p].rect();
+      let w = width as isize - offset.x;
+      let h = height as isize - offset.y;
+      (w.min((sb_h_size>>xdec) as isize), h.min((sb_v_size>>ydec) as isize))
+    };
     let mut out_region =
       out.planes[p].region_mut(Area::StartingAt { x: -ipad, y: -ipad });
     for y in 0..((sb_v_size >> ydec) + pad * 2) as isize {
       let out_row = &mut out_region[y as usize];
-      if offset.y + y < ipad || offset.y + y >= height as isize + ipad {
+      if y < ipad || y >= height as isize + ipad {
         // above or below the frame, fill with flag
         for x in 0..(sb_h_size >> xdec) + pad * 2 {
           out_row[x] = CDEF_VERY_LARGE;
@@ -377,24 +380,12 @@ pub fn cdef_sb_padded_frame_copy<T: Pixel>(
       } else {
         let in_plane_region = &tile.planes[p];
         let in_row = &in_plane_region[(offset.y - ipad + y) as usize];
-        // are we guaranteed to be all in frame this row?
-        if offset.x < ipad
-          || offset.x + (sb_h_size as isize >> xdec) + ipad >= width as isize
-        {
-          // No; do it the hard way.  off left or right edge, fill with flag.
-          for x in 0..(sb_h_size >> xdec) as isize + ipad * 2 {
-            if offset.x + x >= ipad && offset.x + x < width as isize + ipad {
-              out_row[x as usize] =
-                u16::cast_from(in_row[(offset.x + x - ipad) as usize]);
-            } else {
-              out_row[x as usize] = CDEF_VERY_LARGE;
-            }
-          }
-        } else {
-          // Yes, do it the easy way: just copy
-          for x in 0..(sb_h_size >> xdec) as isize + ipad * 2 {
+        for x in 0..(sb_h_size >> xdec) as isize + ipad * 2 {
+          if x >= ipad && x < width as isize + ipad {
             out_row[x as usize] =
               u16::cast_from(in_row[(offset.x + x - ipad) as usize]);
+          } else {
+            out_row[x as usize] = CDEF_VERY_LARGE;
           }
         }
       }
