@@ -3403,72 +3403,16 @@ fn encode_tile<'a, T: Pixel>(
                  
         sbs_q.push_back(sbs_qe);
 
-        //if check_queue {
-          //check_lf_queue(fi, ts, &mut cw, &mut w, &mut sbs_q,
-            //             &mut last_lru_ready,
-              //           &mut last_lru_rdoed,
-                //         &mut last_lru_coded);
-        //}
-      }
-    }
-  }
-
-  {
-    // Solve deblocking for just this tile
-    /* TODO: Don't apply if lossless */
-    let deblock_levels = deblock_filter_optimize(
-      fi,
-      &ts.rec.as_const(),
-      &ts.input_tile,
-      &cw.bc.blocks.as_const(),
-      fi.width,
-      fi.height,
-      fi.sequence.bit_depth);
-    if deblock_levels[0] != 0 || deblock_levels[1] != 0 {
-      // copy reconstruction to a temp frame to restore it later
-      let rec_copy = Frame {
-        planes: [ts.rec.planes[0].scratch_copy(),
-                 ts.rec.planes[1].scratch_copy(),
-                 ts.rec.planes[2].scratch_copy()],
-      };
-  
-      // copy ts.deblock because we need to set some of our own values here
-      let mut deblock_copy = ts.deblock.clone();
-      deblock_copy.levels = deblock_levels;
-    
-      // temporarily deblock the reference
-      deblock_filter_frame(&mut deblock_copy,
-                           &mut ts.rec,
-                           &cw.bc.blocks.as_const(),
-                           fi.width, fi.height, fi.sequence.bit_depth);
-
-      // rdo lf and write
-      check_lf_queue(fi, ts, &mut cw, &mut w, &mut sbs_q,
-                     &mut last_lru_ready,
-                     &mut last_lru_rdoed,
-                     &mut last_lru_coded);
-      
-      // copy original reference back in
-      for pli in 0..PLANES {
-        let dst = &mut ts.rec.planes[pli];
-        let src = &rec_copy.planes[pli];
-        for (dst_row, src_row) in dst.rows_iter_mut().zip(src.rows_iter()) {
-          for (out, input) in dst_row.iter_mut().zip(src_row) {
-            *out = *input;
-          }
+        if check_queue {
+          check_lf_queue(fi, ts, &mut cw, &mut w, &mut sbs_q,
+                         &mut last_lru_ready,
+                         &mut last_lru_rdoed,
+                         &mut last_lru_coded);
         }
       }
-      
-    } else {
-      
-      // rdo lf and write
-      check_lf_queue(fi, ts, &mut cw, &mut w, &mut sbs_q,
-                     &mut last_lru_ready,
-                     &mut last_lru_rdoed,
-                     &mut last_lru_coded);
     }
   }
-    
+
   assert!(
     sbs_q.is_empty(),
     "Superblock queue not empty in tile at offset {}:{}",

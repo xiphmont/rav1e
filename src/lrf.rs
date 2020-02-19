@@ -17,6 +17,7 @@ cfg_if::cfg_if! {
 
 use crate::context::PLANES;
 use crate::context::SB_SIZE;
+use crate::cpu_features::CpuFeatureLevel;
 use crate::encoder::FrameInvariants;
 use crate::frame::Frame;
 use crate::frame::Plane;
@@ -581,12 +582,14 @@ pub fn setup_integral_image<T: Pixel>(
 }
 
 pub fn sgrproj_stripe_filter<T: Pixel>(
-  set: u8, xqd: [i8; 2], fi: &FrameInvariants<T>,
+  set: u8, xqd: [i8; 2],
   integral_image_buffer: &IntegralImageBuffer, integral_image_stride: usize,
   stripe_w: usize, stripe_h: usize, cdeffed: &PlaneSlice<T>,
   out: &mut PlaneMutSlice<T>,
+  bit_depth: usize,
+  cpu_feature_level: CpuFeatureLevel,
 ) {
-  let bdm8 = fi.sequence.bit_depth - 8;
+  let bdm8 = bit_depth - 8;
   let mut a_r2: [[u32; IMAGE_WIDTH_MAX + 2]; 2] =
     [[0; IMAGE_WIDTH_MAX + 2]; 2];
   let mut b_r2: [[u32; IMAGE_WIDTH_MAX + 2]; 2] =
@@ -620,7 +623,7 @@ pub fn sgrproj_stripe_filter<T: Pixel>(
       stripe_w,
       s_r2,
       bdm8,
-      fi.cpu_feature_level,
+      cpu_feature_level,
     );
   }
   if s_r1 > 0 {
@@ -635,7 +638,7 @@ pub fn sgrproj_stripe_filter<T: Pixel>(
       stripe_w,
       s_r1,
       bdm8,
-      fi.cpu_feature_level,
+      cpu_feature_level,
     );
     sgrproj_box_ab_r1(
       &mut a_r1[1],
@@ -647,7 +650,7 @@ pub fn sgrproj_stripe_filter<T: Pixel>(
       stripe_w,
       s_r1,
       bdm8,
-      fi.cpu_feature_level,
+      cpu_feature_level,
     );
   }
 
@@ -667,7 +670,7 @@ pub fn sgrproj_stripe_filter<T: Pixel>(
         stripe_w,
         s_r2,
         bdm8,
-        fi.cpu_feature_level,
+        cpu_feature_level,
       );
       let ap0: [&[u32]; 2] = [&a_r2[(y / 2) % 2], &a_r2[(y / 2 + 1) % 2]];
       let bp0: [&[u32]; 2] = [&b_r2[(y / 2) % 2], &b_r2[(y / 2 + 1) % 2]];
@@ -679,7 +682,7 @@ pub fn sgrproj_stripe_filter<T: Pixel>(
         y,
         stripe_w,
         &cdeffed,
-        fi.cpu_feature_level,
+        cpu_feature_level,
       );
       [&f_r2_0, &f_r2_1]
     } else {
@@ -688,7 +691,7 @@ pub fn sgrproj_stripe_filter<T: Pixel>(
         y,
         stripe_w,
         &cdeffed,
-        fi.cpu_feature_level,
+        cpu_feature_level,
       );
       // share results for both rows
       [&f_r2_0, &f_r2_0]
@@ -707,7 +710,7 @@ pub fn sgrproj_stripe_filter<T: Pixel>(
           stripe_w,
           s_r1,
           bdm8,
-          fi.cpu_feature_level,
+          cpu_feature_level,
         );
         let ap1: [&[u32]; 3] =
           [&a_r1[y % 3], &a_r1[(y + 1) % 3], &a_r1[(y + 2) % 3]];
@@ -720,7 +723,7 @@ pub fn sgrproj_stripe_filter<T: Pixel>(
           y,
           stripe_w,
           &cdeffed,
-          fi.cpu_feature_level,
+          cpu_feature_level,
         );
       } else {
         sgrproj_box_f_r0(
@@ -728,12 +731,11 @@ pub fn sgrproj_stripe_filter<T: Pixel>(
           y,
           stripe_w,
           &cdeffed,
-          fi.cpu_feature_level,
+          cpu_feature_level,
         );
       }
 
       /* apply filter */
-      let bit_depth = fi.sequence.bit_depth;
       let w0 = xqd[0] as i32;
       let w1 = xqd[1] as i32;
       let w2 = (1 << SGRPROJ_PRJ_BITS) - w0 - w1;
@@ -792,8 +794,8 @@ pub fn sgrproj_stripe_filter<T: Pixel>(
 // Inputs are relative to the colocated slice views.
 pub fn sgrproj_solve<T: Pixel>(
   set: u8, fi: &FrameInvariants<T>,
-  integral_image_buffer: &IntegralImageBuffer, input: &PlaneSlice<T>,
-  cdeffed: &PlaneSlice<T>, cdef_w: usize, cdef_h: usize,
+  integral_image_buffer: &IntegralImageBuffer, input: &PlaneSlice<u16>,
+  cdeffed: &PlaneSlice<u16>, cdef_w: usize, cdef_h: usize,
 ) -> (i8, i8) {
   let bdm8 = fi.sequence.bit_depth - 8;
 
@@ -1494,7 +1496,6 @@ impl RestorationState {
               sgrproj_stripe_filter(
                 set,
                 xqd,
-                fi,
                 &stripe_filter_buffer,
                 STRIPE_IMAGE_STRIDE,
                 size,
@@ -1503,6 +1504,8 @@ impl RestorationState {
                   .slice(PlaneOffset { x: x as isize, y: stripe_start_y }),
                 &mut out.planes[pli]
                   .mut_slice(PlaneOffset { x: x as isize, y: stripe_start_y }),
+                fi.sequence.bit_depth,
+                fi.cpu_feature_level,
               );
             }
             RestorationFilter::None => {

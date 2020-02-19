@@ -316,7 +316,7 @@ pub fn cdef_analyze_superblock<T: Pixel>(
 
 pub fn cdef_sb_frame<T: Pixel>(
   fi: &FrameInvariants<T>, sb_w: usize, sb_h: usize, tile: &Tile<'_, T>,
-) -> Frame<T> {
+) -> Frame<u16> {
   let sb_h_size =
     if fi.sequence.use_128x128_superblock { 128 } else { 64 } * sb_w;
   let sb_v_size =
@@ -340,9 +340,9 @@ pub fn cdef_sb_frame<T: Pixel>(
   }
 }
 
-pub fn cdef_sb_padded_frame_copy<T: Pixel>(
+pub fn cdef_sb_padded_frame_copy<T: Pixel, U: Pixel>(
   fi: &FrameInvariants<T>, sbo: TileSuperBlockOffset, sb_w: usize,
-  sb_h: usize, tile: &Tile<'_, T>, pad: usize,
+  sb_h: usize, tile: &Tile<'_, U>, pad: usize,
 ) -> Frame<u16> {
   let ipad = pad as isize;
   let sb_h_size =
@@ -398,16 +398,17 @@ pub fn cdef_sb_padded_frame_copy<T: Pixel>(
 // large as the unpadded area of in
 // cdef_index is taken from the block context
 pub fn cdef_filter_superblock<T: Pixel>(
-  fi: &FrameInvariants<T>, in_frame: &Frame<u16>, out_frame: &mut Frame<T>,
+  in_frame: &Frame<u16>, out_frame: &mut Frame<T>,
   blocks: &TileBlocks<'_>, sbo: TileSuperBlockOffset,
-  sbo_global: TileSuperBlockOffset, cdef_index: u8,
+  sbo_global: TileSuperBlockOffset,
   cdef_dirs: &CdefDirections,
+  bit_depth: usize,
+  cdef_damping: u8,
+  cdef_y_strength: u8,
+  cdef_uv_strength: u8,
+  cpu_feature_level: crate::cpu_features::CpuFeatureLevel,
 ) {
-  let bit_depth = fi.sequence.bit_depth;
-  let coeff_shift = fi.sequence.bit_depth as i32 - 8;
-  let cdef_damping = fi.cdef_damping as i32;
-  let cdef_y_strength = fi.cdef_y_strengths[cdef_index as usize];
-  let cdef_uv_strength = fi.cdef_uv_strengths[cdef_index as usize];
+  let coeff_shift = bit_depth as i32 - 8;
   let cdef_pri_y_strength = (cdef_y_strength / CDEF_SEC_STRENGTHS) as i32;
   let mut cdef_sec_y_strength = (cdef_y_strength % CDEF_SEC_STRENGTHS) as i32;
   let cdef_pri_uv_strength = (cdef_uv_strength / CDEF_SEC_STRENGTHS) as i32;
@@ -450,7 +451,7 @@ pub fn cdef_filter_superblock<T: Pixel>(
           if !skip {
             let local_pri_strength;
             let local_sec_strength;
-            let mut local_damping: i32 = cdef_damping + coeff_shift;
+            let mut local_damping = cdef_damping as i32 + coeff_shift;
             let local_dir = if p == 0 {
               local_pri_strength =
                 adjust_strength(cdef_pri_y_strength << coeff_shift, var);
@@ -498,7 +499,7 @@ pub fn cdef_filter_superblock<T: Pixel>(
                 bit_depth,
                 xdec,
                 ydec,
-                fi.cpu_feature_level,
+                cpu_feature_level,
               );
             }
           } else {
@@ -603,7 +604,7 @@ pub fn cdef_filter_frame<T: Pixel>(
   for fby in 0..fb_height {
     for fbx in 0..fb_width {
       let sbo = PlaneSuperBlockOffset(SuperBlockOffset { x: fbx, y: fby });
-      let cdef_index = blocks[sbo.block_offset(0, 0)].cdef_index;
+      let cdef_index = blocks[sbo.block_offset(0, 0)].cdef_index as usize;
 
       // In this particular instance CDEF application operates on the whole
       // frame as if it were one tile.
@@ -615,15 +616,19 @@ pub fn cdef_filter_frame<T: Pixel>(
         sbo,
         fi.sequence.bit_depth,
       );
+      
       cdef_filter_superblock(
-        fi,
         &cdef_frame,
         rec,
         &tb,
         sbo,
         sbo,
-        cdef_index,
         &cdef_dirs,
+        fi.sequence.bit_depth,
+        fi.cdef_damping,
+        fi.cdef_y_strengths[cdef_index],
+        fi.cdef_uv_strengths[cdef_index],
+        fi.cpu_feature_level,
       );
     }
   }

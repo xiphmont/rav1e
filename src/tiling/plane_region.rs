@@ -63,6 +63,9 @@ pub enum Area {
   /// a rectangle starting at given block offset until the bottom-right corner
   /// of the parent
   BlockStartingAt { bo: BlockOffset },
+  /// a rectangle starting at given block offset until the bottom-right corner
+  /// of the parent
+  PlaneStartingAt { po: PlaneOffset },
 }
 
 impl Area {
@@ -92,6 +95,16 @@ impl Area {
       Area::BlockStartingAt { bo } => {
         let x = (bo.x >> xdec << BLOCK_TO_PLANE_SHIFT) as isize;
         let y = (bo.y >> ydec << BLOCK_TO_PLANE_SHIFT) as isize;
+        Rect {
+          x,
+          y,
+          width: (parent_width as isize - x) as usize,
+          height: (parent_height as isize - y) as usize,
+        }
+      }
+      Area::PlaneStartingAt { po } => {
+        let x = (po.x >> xdec) as isize;
+        let y = (po.y >> ydec) as isize;
         Rect {
           x,
           y,
