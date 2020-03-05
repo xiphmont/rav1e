@@ -45,6 +45,7 @@ use crate::cpu_features::CpuFeatureLevel;
 use crate::partition::PartitionType::*;
 use arrayvec::*;
 use std;
+use std::cmp;
 use std::vec::Vec;
 
 #[derive(Copy, Clone, PartialEq)]
@@ -1771,7 +1772,7 @@ pub fn rdo_loop_decision<T: Pixel>(
   // right or lower edge).  Trim sb width/height down to actual
   // superblocks.  Note that these last superblocks on the
   // right/bottom may themselves still span the edge of the frame, but
-  // they do at least hold visible pixels.
+  // they do hold at least some visible pixels.
 
   sb_w = sb_w.min(ts.sb_width - tile_sbo.0.x);
   sb_h = sb_h.min(ts.sb_height - tile_sbo.0.y);
@@ -1930,8 +1931,15 @@ pub fn rdo_loop_decision<T: Pixel>(
                 if fi.sequence.use_128x128_superblock { 128 } else { 64 };
               let xdec = cdef_ref.planes[pli].cfg.xdec;
               let ydec = cdef_ref.planes[pli].cfg.ydec;
-              let width = (wh + (1 << xdec >> 1)) >> xdec;
-              let height = (wh + (1 << ydec >> 1)) >> ydec;
+              let width =
+                cmp::min((wh + (1 << xdec >> 1)) >> xdec,
+                         (fi.width>>xdec) -
+                         loop_tile_sbo.plane_offset(&cdef_ref.planes[pli].cfg).x as usize);
+              let height =
+                cmp::min((wh + (1 << ydec >> 1)) >> ydec,
+                         (fi.height>>ydec) -
+                         loop_tile_sbo.plane_offset(&cdef_ref.planes[pli].cfg).y as usize);
+
               // which LRU are we currently testing against?
               if let (
                 Some((tile_lru_x, tile_lru_y)),
@@ -1976,8 +1984,6 @@ pub fn rdo_loop_decision<T: Pixel>(
                     };
                   }
                   RestorationFilter::Sgrproj { set, xqd } => {
-                    // only run on this superblock
-                    // if height is 128x128, we'll need to run two stripes
                     let loop_po =
                       loop_sbo.plane_offset(&cdef_ref.planes[pli].cfg);
 
