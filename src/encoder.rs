@@ -3442,7 +3442,19 @@ fn encode_tile<'a, T: Pixel>(
                            &cw.bc.blocks.as_const(),
                            fi.width, fi.height, fi.sequence.bit_depth);
 
-      // rdo lf and write
+      // loop rdo on entire tile at once, not just smaller units
+      rdo_loop_decision(
+        TileSuperBlockOffset(SuperBlockOffset{x:0, y:0}),
+        fi,
+        ts,
+        &mut cw,
+        &mut w
+      );
+      // mark it all done
+      last_lru_ready = [999999,999999,999999];
+      last_lru_rdoed = [999999,999999,999999];
+      
+      // reuse check_queue to do the writing/flushing
       check_lf_queue(fi, ts, &mut cw, &mut w, &mut sbs_q,
                      &mut last_lru_ready,
                      &mut last_lru_rdoed,

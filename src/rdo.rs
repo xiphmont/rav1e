@@ -1752,11 +1752,15 @@ pub fn rdo_loop_decision<T: Pixel>(
       sb_h = 1 << sb_v_shift;
     }
   }
+
+  sb_w = ts.sb_width;
+  sb_h = ts.sb_height;
+  
   for pli in 0..PLANES {
     let sb_h_shift = ts.restoration.planes[pli].rp_cfg.sb_h_shift;
     let sb_v_shift = ts.restoration.planes[pli].rp_cfg.sb_v_shift;
-    lru_w[pli] = sb_w / (1 << sb_h_shift);
-    lru_h[pli] = sb_h / (1 << sb_v_shift);
+    lru_w[pli] = ts.restoration.planes[pli].units.cols();
+    lru_h[pli] = ts.restoration.planes[pli].units.rows();
   }
 
   let mut best_index = vec![-1; sb_w * sb_h];
