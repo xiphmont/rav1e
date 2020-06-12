@@ -369,27 +369,32 @@ pub fn cdef_padded_tile_copy<T: Pixel>(
     let PlaneOffset { x, y } = sbo.plane_offset(tile.planes[pli].plane_cfg);
     let in_width = tile.planes[pli].rect().width as isize;
     let in_height = tile.planes[pli].rect().height as isize;
-    let out_width = out.planes[pli].cfg.width;
-    let out_height = out.planes[pli].cfg.height;
+    let out_width = out.planes[pli].cfg.width as isize;
+    let out_height = out.planes[pli].cfg.height as isize;
     // we copy pixels from the input tile for padding, but don't
     // exceed the bounds of the tile (do not contend with other
     // threads!)
     let mut out_region =
       out.planes[pli].region_mut(Area::StartingAt { x: -ipad, y: -ipad });
-    for yi in 0..(out_height + pad * 2) as isize {
+    for yi in 0..out_height + ipad * 2 {
       let out_row = &mut out_region[yi as usize];
-      if y + yi - ipad < 0 || y + yi - ipad >= in_height as isize {
-        // above or below the visible frame, fill with flag.
-        // This flag needs to go away (since it forces us to use a 16-bit range)
-        // but that requires some deep changes to the filtering code
-        // and buffer offsetting in loop filter RDO
-        for xi in 0..out_width + pad * 2 {
-          out_row[xi] = CDEF_VERY_LARGE;
-        }
+      if yi - ipad < 0 ||
+        yi - ipad >= out_height ||
+        y + yi - ipad >= in_height as isize {
+          // above or below the requested copy area, or beyond the
+          // visible region of the passed-in tilem fill with flag.
+          // This flag needs to go away (since it forces us to use a
+          // 16-bit range) but that requires some deep changes to CDEF
+          // math
+          for xi in 0..out_width + ipad * 2 {
+            out_row[xi as usize] = CDEF_VERY_LARGE;
+          }
       } else {
         let in_row = &tile.planes[pli][(y + yi - ipad) as usize];
-        for xi in 0..out_width as isize + ipad * 2 {
-          if x + xi - ipad >= 0 && x + xi - ipad < in_width as isize {
+        for xi in 0..out_width + ipad * 2 {
+          if xi - ipad >= 0 &&
+            xi - ipad < out_width &&
+            x + xi - ipad < in_width as isize {
             out_row[xi as usize] =
               u16::cast_from(in_row[(x + xi - ipad) as usize]);
           } else {

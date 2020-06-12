@@ -2003,12 +2003,12 @@ pub fn rdo_loop_decision<T: Pixel>(
   // largest-LRU-sized frames for each, accounting for padding
   // required by deblocking, cdef and [optionally] LR.
 
-  // NOTE: the CDEF code requires padding to simplify addressing.
-  // Right now, the padded area does borrow neighboring pixels for the
-  // border so long as they're within the tile [as opposed to simply
-  // flagging the border pixels as inactive].  LR code currently does
-  // not need and will not use padding area.  It always edge-extends
-  // the passed in rectangle.
+  // NOTE: the CDEF code requires padding to simplify addressing.  The
+  // copy has been changed to not borrow neighboring pixels for the
+  // border even if they're within the tile.  LR code currently does
+  // not need and will not use padding area.  It edge-extends the
+  // passed in rectangle for any kernel operations that extend outside
+  // the area.
   let mut rec_subset = {
     let const_rec = ts.rec.as_const();
     // a padding of 8 gets us a full block of border.  CDEF
